@@ -1,0 +1,22 @@
+{
+  "name": "opencode-autopilot-plugin",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for autonomous multi-step execution with /autopilot command",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "keywords": ["opencode", "plugin", "autopilot", "superpowers"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@opencode-ai/plugin": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}
