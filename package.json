@@ -12,8 +12,9 @@
   "keywords": ["opencode", "plugin", "autopilot", "superpowers"],
   "author": "",
   "license": "MIT",
-  "dependencies": {
-    "@opencode-ai/plugin": "^0.1.0"
+  "dependencies": {},
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.14.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

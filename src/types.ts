@@ -16,7 +16,7 @@ export interface AutopilotState {
   phaseLoopCount: number;
   startTime: number;
   lastActivity: number;
-  pendingTimer: ReturnType<typeof setTimeout> | null;
+  pendingTimer: NodeJS.Timeout | null;
 }
 
 export interface CommandInput {
