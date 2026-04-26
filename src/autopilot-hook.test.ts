@@ -1307,7 +1307,7 @@ async function run(): Promise<void> {
     { parts: [] },
   );
   resumeBlockedHook.setReadinessForTest({
-    configReadable: true,
+    configReadable: false,
     superpowersDeclared: false,
     autopilotInstalled: true,
     availableAgents: [
@@ -1319,7 +1319,7 @@ async function run(): Promise<void> {
       'autopilot-reviewer',
     ],
     ready: false,
-    missing: ['superpowersUndeclared'],
+    missing: ['configUnreadable'],
   });
   const resumeBlockedOutput: CommandOutput = { parts: [] };
   await resumeBlockedHook.handleCommandExecuteBefore(

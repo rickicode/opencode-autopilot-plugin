@@ -5,6 +5,7 @@ declare module '@opencode-ai/plugin' {
 
   export interface PluginInput {
     config?: PluginContextConfig;
+    directory?: string;
     client: {
       session: {
         prompt(input: {
@@ -36,10 +37,24 @@ declare module '@opencode-ai/plugin' {
     };
   }
 
+  export interface AgentConfig {
+    model?: string;
+    temperature?: number;
+    prompt?: string;
+    description?: string;
+    variant?: string;
+    mode?: 'primary' | 'subagent' | 'all';
+    hidden?: boolean;
+    options?: Record<string, unknown>;
+    permission?: Record<string, unknown>;
+  }
+
   export type Plugin = (
     ctx: PluginInput,
   ) => Promise<{
     name: string;
+    agent?: Record<string, AgentConfig>;
+    tool?: Record<string, unknown>;
     config?: (opencodeConfig: Record<string, unknown>) => Promise<void>;
     'command.execute.before'?: (
       input: unknown,

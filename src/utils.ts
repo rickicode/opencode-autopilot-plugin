@@ -53,6 +53,7 @@ export function buildOrchestratorStartupGuidance(options: {
   completeLine: string;
   completeStopLine: string;
   completeBehaviorLine?: string;
+  delegationGuide?: string;
 }): string {
   return [
     `Autopilot enabled: ${options.task}`,
@@ -76,6 +77,7 @@ export function buildOrchestratorStartupGuidance(options: {
     ...(options.completeBehaviorLine
       ? ['', 'When completion does not require a stop:', options.completeBehaviorLine]
       : []),
+    ...(options.delegationGuide ? ['', options.delegationGuide] : []),
     '',
     `Task: ${options.task}`,
   ].join('\n');
@@ -98,6 +100,59 @@ export function buildOrchestratorContinuationGuidance(options: {
       : []),
     options.assessmentMessage,
   ].join('\n');
+}
+
+export function readSuperpowersTask(projectDir: string): {
+  specs: string[];
+  plans: string[];
+  hasSuperpowers: boolean;
+} {
+  try {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const baseDir = path.join(projectDir, 'docs', 'superpowers-optimized');
+
+    if (!fs.existsSync(baseDir)) {
+      return { specs: [], plans: [], hasSuperpowers: false };
+    }
+
+    const specsDir = path.join(baseDir, 'specs');
+    const plansDir = path.join(baseDir, 'plans');
+
+    const readDir = (dir: string): string[] => {
+      if (!fs.existsSync(dir)) return [];
+      return fs
+        .readdirSync(dir)
+        .filter((f: string) => f.endsWith('.md'))
+        .map((f: string) => {
+          const content = fs.readFileSync(path.join(dir, f), 'utf-8');
+          return `### ${f}\n${content}`;
+        });
+    };
+
+    const specs = readDir(specsDir);
+    const plans = readDir(plansDir);
+
+    return { specs, plans, hasSuperpowers: true };
+  } catch {
+    return { specs: [], plans: [], hasSuperpowers: false };
+  }
+}
+
+export function buildTaskContextFromSuperpowers(projectDir: string): string | null {
+  const { specs, plans, hasSuperpowers } = readSuperpowersTask(projectDir);
+  if (!hasSuperpowers || (specs.length === 0 && plans.length === 0)) {
+    return null;
+  }
+
+  const sections: string[] = ['## Superpowers Context'];
+  if (specs.length > 0) {
+    sections.push('### Specs', ...specs);
+  }
+  if (plans.length > 0) {
+    sections.push('### Plans', ...plans);
+  }
+  return sections.join('\n\n');
 }
 
 export function parseAutopilotCommand(args: string): {
