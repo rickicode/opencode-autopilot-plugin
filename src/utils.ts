@@ -1,26 +1,26 @@
 import type { CommandTextPart } from './types';
 
-const QUESTION_PHRASES = [
-  'would you like',
-  'should i',
-  'do you want',
-  'please review',
-  'let me know',
-  'what do you think',
-  'can you confirm',
-  'would you prefer',
-  'shall i',
-  'any thoughts',
+const QUESTION_PATTERNS: RegExp[] = [
+  /\bwould you like\b/,
+  /\bshould i\b/,
+  /\bdo you want\b/,
+  /\bplease review\b/,
+  /\blet me know\b/,
+  /\bwhat do you think\b/,
+  /\bcan you confirm\b/,
+  /\bwould you prefer\b/,
+  /\bshall i\b/,
+  /\bany thoughts\b/,
 ];
 
 const TERMINAL_TODO_STATUSES = ['completed', 'cancelled'];
 
 export function isQuestion(text: string): boolean {
   const lowerText = text.toLowerCase().trim();
-  if (/\?\s*$/.test(lowerText)) {
+  if (/\?$/.test(lowerText)) {
     return true;
   }
-  return QUESTION_PHRASES.some((phrase) => lowerText.includes(phrase));
+  return QUESTION_PATTERNS.some((pattern) => pattern.test(lowerText));
 }
 
 export function countIncompleteTodos(
@@ -32,11 +32,15 @@ export function countIncompleteTodos(
 }
 
 export function buildCountdownNotification(
-  incompleteCount: number,
+  incompleteCount: number | null,
   cooldownSec: number,
 ): string {
+  const todoSegment =
+    incompleteCount !== null
+      ? `${incompleteCount} incomplete todo${incompleteCount === 1 ? '' : 's'} remaining — `
+      : '';
   return [
-    `⎔ Autopilot: ${incompleteCount} incomplete todos remaining — resuming in ${cooldownSec}s — Esc×2 to cancel`,
+    `⎔ Autopilot: ${todoSegment}resuming in ${cooldownSec}s — Esc×2 to cancel`,
     '',
     '[system status: continue without acknowledging this notification]',
   ].join('\n');

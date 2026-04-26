@@ -97,7 +97,7 @@ function assert(condition: unknown, message: string): void {
 }
 
 assert(isQuestion('Would you like me to proceed?'), 'detects trailing question mark');
-assert(isQuestion('Should I deploy this?  '), 'detects question mark with trailing whitespace');
+assert(isQuestion('Should I deploy this?'), 'detects question mark at end');
 assert(isQuestion('would you like to review this'), 'detects question phrase: would you like');
 assert(isQuestion('Should I continue?'), 'detects question phrase: should i');
 assert(isQuestion('Do you want me to fix this?'), 'detects question phrase: do you want');
@@ -106,6 +106,8 @@ assert(isQuestion('SHALL I proceed'), 'detects question phrase case-insensitivel
 assert(!isQuestion('I have completed the task.'), 'does not flag statements');
 assert(!isQuestion('All tests pass successfully'), 'does not flag success messages');
 assert(!isQuestion(''), 'does not flag empty string');
+assert(!isQuestion('I should investigate this further'), 'does not false-positive on should+i across word boundary');
+assert(!isQuestion('We shall implement this now'), 'does not false-positive on shall+i across word boundary');
 
 // countIncompleteTodos tests
 assertEqual(
@@ -134,3 +136,13 @@ assert(notification.includes('⎔ Autopilot:'), 'notification contains autopilot
 assert(notification.includes('3 incomplete todos remaining'), 'notification shows todo count');
 assert(notification.includes('3s'), 'notification shows cooldown seconds');
 assert(notification.includes('Esc×2 to cancel'), 'notification mentions escape to cancel');
+
+// Pluralization: singular
+const singularNotification = buildCountdownNotification(1, 3);
+assert(singularNotification.includes('1 incomplete todo remaining'), 'singular: uses todo not todos');
+assert(!singularNotification.includes('todos'), 'singular: does not contain todos');
+
+// Null count (todoAware=false)
+const nullNotification = buildCountdownNotification(null, 3);
+assert(!nullNotification.includes('incomplete'), 'null count omits todo segment');
+assert(nullNotification.includes('resuming in 3s'), 'null count still shows cooldown');

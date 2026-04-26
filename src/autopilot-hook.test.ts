@@ -1414,7 +1414,9 @@ async function run(): Promise<void> {
   // =================================================================
   // Feature: Countdown notification (noReply message before continue)
   // =================================================================
-  const countdownScenario = createPromptCollector();
+  const countdownScenario = createPromptCollector({
+    todos: [{ id: '1', content: 'build plugin', status: 'pending', priority: 'normal' }],
+  });
   const countdownHook = createAutopilotHook(countdownScenario.ctx, {
     defaultMaxLoops: 5,
     maxLoopsPerPhase: 5,
@@ -1714,7 +1716,7 @@ async function run(): Promise<void> {
     'todo-aware countdown is noReply',
   );
   assert(
-    todoAwareScenario.prompts[0]?.body.parts[0]?.text?.includes('1 incomplete todos remaining'),
+    todoAwareScenario.prompts[0]?.body.parts[0]?.text?.includes('1 incomplete todo remaining'),
     'countdown notification shows correct incomplete todo count',
   );
 }

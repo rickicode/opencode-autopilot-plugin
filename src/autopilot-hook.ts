@@ -522,25 +522,25 @@ function createAutopilotHookInternal(
 
   async function checkTodoGate(
     sessionID: string,
-  ): Promise<{ hasIncomplete: boolean; incompleteCount: number }> {
+  ): Promise<{ incompleteCount: number }> {
     if (!config.todoAware) {
-      return { hasIncomplete: true, incompleteCount: 0 };
+      return { incompleteCount: 0 };
     }
     try {
       const todosResult = await ctx.client.session.todo({
         path: { id: sessionID },
       });
       const incompleteCount = countIncompleteTodos(todosResult.data);
-      return { hasIncomplete: incompleteCount > 0, incompleteCount };
+      return { incompleteCount };
     } catch {
       // graceful degradation: skip gate if API unavailable
-      return { hasIncomplete: true, incompleteCount: 0 };
+      return { incompleteCount: 0 };
     }
   }
 
   async function sendCountdownNotification(
     sessionID: string,
-    incompleteCount: number,
+    incompleteCount: number | null,
   ): Promise<void> {
     const state = sessions.get(sessionID);
     if (state) {
@@ -615,12 +615,17 @@ function createAutopilotHookInternal(
     }
 
     // Safety gate: todo-aware continuation
-    const { hasIncomplete, incompleteCount } =
-      await checkTodoGate(sessionID);
+    const { incompleteCount } = await checkTodoGate(sessionID);
+    if (config.todoAware && incompleteCount === 0) {
+      return;
+    }
 
     // Send countdown notification before scheduling continuation
     if (config.todoAware || config.questionDetection) {
-      await sendCountdownNotification(sessionID, incompleteCount);
+      await sendCountdownNotification(
+        sessionID,
+        config.todoAware ? incompleteCount : null,
+      );
     }
 
     const pendingTimer = setTimeout(async () => {
