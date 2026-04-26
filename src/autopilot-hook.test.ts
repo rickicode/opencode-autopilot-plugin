@@ -181,6 +181,10 @@ async function run(): Promise<void> {
   );
   assert(startOutput.parts[0]?.text?.includes('Autopilot enabled: build plugin'), 'starts autopilot');
   assert(
+    startOutput.parts[0]?.text?.includes('=== AUTOPILOT ACTIVE ==='),
+    'startup prompt includes active toast banner',
+  );
+  assert(
     startOutput.parts[0]?.text?.includes('You are Superpowers, the primary agent for this autopilot workflow.'),
     'startup prompt uses Superpowers identity',
   );
@@ -837,6 +841,10 @@ async function run(): Promise<void> {
   assert(
     resumeOutput.parts[0]?.text?.includes('Autopilot resumed: resume test'),
     'resume reports continuation after a loop-limit stop',
+  );
+  assert(
+    resumeOutput.parts[0]?.text?.includes('=== AUTOPILOT ACTIVE ==='),
+    'resume output includes active toast banner',
   );
   assertEqual(resumePrompts.length, 3, 'resume allows a new continuation after max-loop stop');
   assert(
@@ -1776,6 +1784,58 @@ async function run(): Promise<void> {
     }),
     true,
     'approved artifact execution auto-starts when readiness is satisfied',
+  );
+
+  const runtimeAutoStartScenario = createPromptCollector();
+  const runtimeAutoStartHook = createAutopilotHookForTest(runtimeAutoStartScenario.ctx, {
+    defaultMaxLoops: 3,
+    maxLoopsPerPhase: 2,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+  });
+  runtimeAutoStartHook.setReadinessForTest({
+    configReadable: true,
+    superpowersDeclared: true,
+    autopilotInstalled: true,
+    installReady: true,
+    executionReady: true,
+    availableAgents: [
+      'superpowers',
+      'superpowers-explorer',
+      'superpowers-implementer',
+      'superpowers-knowledge',
+      'superpowers-designer',
+      'superpowers-reviewer',
+    ],
+    ready: true,
+    missing: [],
+  });
+  await runtimeAutoStartHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: {
+        sessionID: 'session-runtime-auto-start',
+        status: { type: 'busy' },
+        classification: 'FULL',
+        artifactPaths: [
+          'docs/superpowers/specs/feature-approved.md',
+          'docs/superpowers/plans/feature-approved.md',
+        ],
+        currentAction: 'implement feature',
+        approvalPending: false,
+      },
+    },
+  });
+  const runtimeAutoStartStatusOutput: CommandOutput = { parts: [] };
+  await runtimeAutoStartHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-runtime-auto-start', arguments: 'status' },
+    runtimeAutoStartStatusOutput,
+  );
+  assert(
+    runtimeAutoStartStatusOutput.parts[0]?.text?.includes('Autopilot: enabled') &&
+      runtimeAutoStartStatusOutput.parts[0]?.text?.includes('Task: implement feature'),
+    'approved artifact execution auto-starts autopilot in the live runtime path',
   );
 
   const resumeBlockedScenario = createPromptCollector();

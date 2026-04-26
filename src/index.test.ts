@@ -200,6 +200,10 @@ async function run(): Promise<void> {
     toolResult?.includes('Autopilot enabled: build plugin'),
     'tool execution forwards to autopilot hook',
   );
+  assert(
+    toolResult?.includes('=== AUTOPILOT ACTIVE ==='),
+    'tool execution includes active toast banner',
+  );
 
   await plugin.event?.({
     event: { type: 'session.idle', properties: { sessionID: 'session-1' } },

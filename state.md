@@ -1,20 +1,22 @@
 ## Current Goal
-Commit and push the current autopilot-plugin worktree, including `project-map.md`.
+Make autopilot actually auto-start during Superpowers implementation/executing-task flow when approved artifacts are present.
 
 ## Decisions
-- Keep `project-map.md` in the commit because the user explicitly asked for it.
-- Exclude `.a5c/` and `*.tgz` from version control because they are generated artifacts.
-- Preserve the `oh-my-opencode-slim` command-pattern notes in repo docs for future debugging.
+- Approved Superpowers artifact execution now auto-starts autopilot from the live `session.status` busy path in `src/autopilot-hook.ts`.
+- `shouldAutoStart` is no longer test-only in practice; runtime now uses the same trigger decision instead of leaving it disconnected.
+- Auto-start activates session state directly instead of depending on the `/autopilot` command template executing inside the implementation flow.
 
 ## Plan Status
-- Context persisted with `state.md` and `session-log.md`.
-- Pending: stage real repo changes, commit, and push to `origin`.
+- Added a regression test in `src/autopilot-hook.test.ts` for live runtime auto-start on implementation/execution.
+- Wired the runtime hook so approved artifact execution enables autopilot before idle continuation logic runs.
+- Focused hook verification and full suite verification completed successfully.
 
 ## Evidence
-- `git status --short --branch` shows broad source/doc changes plus generated `.a5c/` and tarball artifacts.
-- `origin` remote points to `https://github.com/rickicode/opencode-autopilot-plugin.git`.
-- `project-map.md` already records the runtime-semantics constraint around `command.execute.before`.
+- `src/autopilot-hook.test.ts` now proves approved artifact execution enables autopilot in the live runtime path.
+- `src/autopilot-hook.ts` reads trigger metadata from `session.status` and auto-starts on `busy` when artifacts and readiness qualify.
+- `npm run build && node --test "dist/autopilot-hook.test.js"` passed after the fix.
+- `npm test` passed after the fix.
 
 ## Open Issues
-- Runtime still appears to treat `/autopilot` as a prompt-template command.
-- Commit message should reflect command wiring, superpowers alignment, and docs updates.
+- Repo changes are still uncommitted.
+- Installed OpenCode runtime should be re-checked to confirm it emits the expected trigger metadata consistently.

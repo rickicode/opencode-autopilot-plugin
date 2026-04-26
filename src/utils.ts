@@ -50,6 +50,13 @@ export function buildCountdownNotification(
   ].join('\n');
 }
 
+export function buildAutopilotActiveBanner(label: 'enabled' | 'resumed'): string {
+  return [
+    '=== AUTOPILOT ACTIVE ===',
+    label === 'enabled' ? 'Autopilot is now driving this session.' : 'Autopilot has resumed control of this session.',
+  ].join('\n');
+}
+
 export function buildSuperpowersStartupGuidance(options: {
   task: string;
   maxLoops: number;

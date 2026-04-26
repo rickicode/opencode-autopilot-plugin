@@ -70,7 +70,9 @@ The visible status format is:
 /autopilot "add user authentication with JWT"
 ```
 
-Starts autopilot with the default loop budget.
+Starts autopilot with the default loop budget and shows an inline active banner.
+
+The activation output includes a visible `AUTOPILOT ACTIVE` banner before the normal startup guidance.
 
 ### Set Loop Budget
 
@@ -104,7 +106,7 @@ Disables autopilot for the current plugin instance. It preserves the last task a
 /autopilot resume
 ```
 
-Resumes the most recent task if context is still available.
+Resumes the most recent task if context is still available and shows the same inline active banner.
 
 Optional loop override:
 

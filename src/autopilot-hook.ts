@@ -26,6 +26,7 @@ import {
   buildCountdownNotification,
   buildTaskContextFromSuperpowers,
   readSuperpowersArtifacts,
+  buildAutopilotActiveBanner,
 } from './utils';
 import { AUTOPILOT_AGENT_IDS } from './agent-manifest';
 import { getSuperpowersDelegationGuide } from './subagents';
@@ -601,6 +602,92 @@ function createAutopilotHookInternal(
     return sessions.get(sessionID)!;
   }
 
+  async function autoStartFromTrigger(
+    sessionID: string,
+    triggerInput: ExecutionTriggerInput,
+  ): Promise<boolean> {
+    if (!shouldAutoStart(triggerInput)) {
+      return false;
+    }
+
+    const state = getOrCreateState(sessionID);
+    if (state.enabled) {
+      return false;
+    }
+
+    bumpRunVersion(sessionID);
+    cancelPendingTimer(state);
+
+    state.enabled = true;
+    state.task = triggerInput.currentAction;
+    hydrateExecutionStateFromArtifacts(state, ctx.directory);
+    state.maxLoops = config.defaultMaxLoops;
+    state.currentLoop = 0;
+    state.currentPhase = 'execute';
+    state.phaseLoopCount = 0;
+    state.startTime = Date.now();
+    state.lastActivity = Date.now();
+    state.lastRecommendation = buildPhaseRecommendation(state);
+    state.canAutoProceed = true;
+    state.stagnationCount = 0;
+    state.lastObservedOutcome = 'progress';
+    state.lastPromptKind = 'start';
+    state.consecutiveContinuations = 0;
+    state.suppressUntil = 0;
+    state.isAutoInjecting = false;
+    state.isNotifying = false;
+
+    await ctx.client.session.prompt({
+      path: { id: sessionID },
+      body: {
+        parts: [
+          createInternalPrompt(
+            [
+              buildAutopilotActiveBanner('enabled'),
+              buildStartupInstructions(state, config, ctx.directory),
+            ].join('\n\n'),
+          ),
+        ],
+      },
+    });
+
+    return true;
+  }
+
+  function readExecutionTriggerInput(
+    properties?: Record<string, unknown>,
+  ): ExecutionTriggerInput | null {
+    if (!properties) {
+      return null;
+    }
+
+    const classification = properties.classification;
+    const currentAction = properties.currentAction;
+    const approvalPending = properties.approvalPending;
+    const artifactPaths = properties.artifactPaths;
+
+    if (
+      classification !== 'MICRO' &&
+      classification !== 'LIGHTWEIGHT' &&
+      classification !== 'FULL'
+    ) {
+      return null;
+    }
+
+    if (typeof currentAction !== 'string' || !Array.isArray(artifactPaths)) {
+      return null;
+    }
+
+    return {
+      classification,
+      currentAction,
+      approvalPending: approvalPending === true,
+      artifactPaths: artifactPaths.filter(
+        (artifactPath): artifactPath is string => typeof artifactPath === 'string',
+      ),
+    };
+  }
+
   function cancelPendingTimer(state: AutopilotState): void {
     if (state.pendingTimer) {
       clearTimeout(state.pendingTimer);
@@ -743,7 +830,11 @@ function createAutopilotHookInternal(
         state.lastPromptKind = 'resume';
         output.parts.push(
           createInternalPrompt(
-            `Autopilot resumed: ${state.task}\nContinuing from loop ${state.currentLoop}/${state.maxLoops}`,
+            [
+              buildAutopilotActiveBanner('resumed'),
+              `Autopilot resumed: ${state.task}`,
+              `Continuing from loop ${state.currentLoop}/${state.maxLoops}`,
+            ].join('\n'),
           ),
         );
         break;
@@ -790,7 +881,10 @@ function createAutopilotHookInternal(
 
         output.parts.push(
           createInternalPrompt(
-            buildStartupInstructions(state, config, ctx.directory),
+            [
+              buildAutopilotActiveBanner('enabled'),
+              buildStartupInstructions(state, config, ctx.directory),
+            ].join('\n\n'),
           ),
         );
         break;
@@ -1130,6 +1224,11 @@ function createAutopilotHookInternal(
           state.stagnationCount = 0;
           state.lastObservedOutcome = 'progress';
           restoreAutoProceedRecommendation(state);
+        } else if (sessionID) {
+          const triggerInput = readExecutionTriggerInput(event.properties);
+          if (triggerInput) {
+            await autoStartFromTrigger(sessionID, triggerInput);
+          }
         }
         } else if (sessionID && status?.type === 'complete') {
           const state = sessions.get(sessionID);
