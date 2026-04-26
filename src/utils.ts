@@ -322,6 +322,18 @@ export function buildTaskContextFromSuperpowers(projectDir: string): string | nu
   return sections.join('\n\n');
 }
 
+function unwrapQuotedTask(task: string): string {
+  const trimmed = task.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return trimmed.slice(1, -1);
+    }
+  }
+  return trimmed;
+}
+
 export function parseAutopilotCommand(args: string): {
   action: 'start' | 'off' | 'status' | 'resume';
   maxLoops?: number;
@@ -329,6 +341,10 @@ export function parseAutopilotCommand(args: string): {
   error?: string;
 } {
   const trimmed = args.trim();
+
+  // Empty invocation just enables autopilot — the auto-engage path handles
+  // the rest on the next idle.
+  if (trimmed === '') return { action: 'start' };
 
   if (trimmed === 'off') return { action: 'off' };
   if (trimmed === 'status') return { action: 'status' };
@@ -345,27 +361,24 @@ export function parseAutopilotCommand(args: string): {
     return { action: 'resume', maxLoops };
   }
 
-  const loopsMatch = trimmed.match(/^--loops\s+(\d+)\s+"([\s\S]+)"$/);
+  // /autopilot --loops N [task...]   (task may be quoted or unquoted; optional)
+  const loopsMatch = trimmed.match(/^--loops\s+(\d+)(?:\s+([\s\S]+))?$/);
   if (loopsMatch) {
     const maxLoops = parseInt(loopsMatch[1], 10);
-    const task = loopsMatch[2];
+    const rawTask = loopsMatch[2];
 
     if (maxLoops <= 0) {
       return { action: 'start', error: 'maxLoops must be positive' };
     }
 
-    return { action: 'start', maxLoops, task };
+    const task = rawTask ? unwrapQuotedTask(rawTask) : undefined;
+    return task
+      ? { action: 'start', maxLoops, task }
+      : { action: 'start', maxLoops };
   }
 
-  const taskMatch = trimmed.match(/^"([\s\S]+)"$/);
-  if (taskMatch) {
-    return { action: 'start', task: taskMatch[1] };
-  }
-
-  return {
-    action: 'start',
-    error: 'Usage: /autopilot "task" or /autopilot --loops N "task"',
-  };
+  // Quoted or unquoted task — quotes are optional.
+  return { action: 'start', task: unwrapQuotedTask(trimmed) };
 }
 
 export function createInternalPrompt(text: string): CommandTextPart {

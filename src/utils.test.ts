@@ -55,10 +55,29 @@ if (!invalidMaxLoops.error) {
   throw new Error('rejects invalid maxLoops');
 }
 
-const malformedInput = parseAutopilotCommand('invalid');
-if (!malformedInput.error) {
-  throw new Error('rejects malformed input');
-}
+assertEqual(
+  parseAutopilotCommand('add auth flow'),
+  { action: 'start', task: 'add auth flow' },
+  'accepts unquoted task arguments',
+);
+
+assertEqual(
+  parseAutopilotCommand('--loops 9 build dashboard'),
+  { action: 'start', maxLoops: 9, task: 'build dashboard' },
+  'accepts --loops with unquoted task',
+);
+
+assertEqual(
+  parseAutopilotCommand('--loops 5'),
+  { action: 'start', maxLoops: 5 },
+  'accepts --loops without a task (auto-engage standby)',
+);
+
+assertEqual(
+  parseAutopilotCommand(''),
+  { action: 'start' },
+  'parses empty invocation as auto-engage start',
+);
 
 assertEqual(
   createInternalPrompt('continue'),

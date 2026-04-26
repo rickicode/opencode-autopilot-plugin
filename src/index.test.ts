@@ -81,7 +81,7 @@ async function run(): Promise<void> {
   const pluginAutopilotCommand =
     (pluginCommandRegistry.autopilot ?? {}) as Record<string, unknown>;
   assert(
-    pluginAutopilotCommand.template === 'Call the autopilot tool with raw=$ARGUMENTS',
+    pluginAutopilotCommand.template === '$ARGUMENTS',
     'plugin directly exposes slim-style autopilot command template for runtime registration',
   );
   assert(
@@ -136,7 +136,7 @@ async function run(): Promise<void> {
   assert(typeof commandRegistry === 'object', 'config hook initializes command registry');
   assert(typeof autopilotCommand === 'object', 'config hook registers autopilot command');
   assert(
-    autopilotCommand.template === 'Call the autopilot tool with raw=$ARGUMENTS',
+    autopilotCommand.template === '$ARGUMENTS',
     'config hook preserves slim-style slash-command template for autopilot discovery',
   );
   assert(
@@ -297,6 +297,50 @@ async function run(): Promise<void> {
   assert(
     rawStatusResult?.includes('Autopilot: enabled'),
     'tool execution accepts raw command arguments for status fallback',
+  );
+
+  // Regression: the command.execute.before hook MUST fully replace the
+  // template parts so the user never sees the literal template text in chat.
+  const templateOnlyOutput = {
+    parts: [{ type: 'text', text: '$ARGUMENTS' }],
+  };
+  await plugin['command.execute.before']?.(
+    {
+      command: '/autopilot',
+      sessionID: 'session-template-replace',
+      arguments: 'ship the dashboard refactor',
+    },
+    templateOnlyOutput,
+  );
+  assert(
+    templateOnlyOutput.parts.every(
+      (part) => !part.text?.includes('$ARGUMENTS'),
+    ),
+    'hook replaces template placeholder so it never reaches the LLM',
+  );
+  assert(
+    templateOnlyOutput.parts.some((part) =>
+      part.text?.startsWith('[AUTOPILOT-INTERNAL]'),
+    ),
+    'hook injects the [AUTOPILOT-INTERNAL] prompt in place of the template',
+  );
+
+  const noArgOutput = {
+    parts: [{ type: 'text', text: 'stale' }],
+  };
+  await plugin['command.execute.before']?.(
+    {
+      command: '/autopilot',
+      sessionID: 'session-empty-args',
+      arguments: '',
+    },
+    noArgOutput,
+  );
+  assert(
+    noArgOutput.parts.some((part) =>
+      part.text?.includes('Autopilot is now active'),
+    ),
+    'hook treats /autopilot with no args as auto-engage standby (no error)',
   );
 }
 

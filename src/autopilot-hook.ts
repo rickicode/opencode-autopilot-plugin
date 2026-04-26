@@ -974,17 +974,37 @@ function createAutopilotHookInternal(
           return;
         }
 
-        if (!parsed.task) {
-          output.parts.push(createInternalPrompt('Error: task is required'));
-          return;
-        }
-
         if (parsed.maxLoops !== undefined) {
           const maxLoopsError = validateMaxLoops(parsed.maxLoops);
           if (maxLoopsError) {
             output.parts.push(createInternalPrompt(`Error: ${maxLoopsError}`));
             return;
           }
+        }
+
+        // /autopilot with no task argument enables auto-engage standby mode:
+        // the next idle event injects the standard continuation prompt up to
+        // the configured loop budget. Mirrors /auto-continue toggle behavior.
+        if (!parsed.task) {
+          bumpRunVersion(sessionID);
+          cancelPendingTimer(state);
+          state.enabled = true;
+          state.maxLoops = parsed.maxLoops ?? config.defaultMaxLoops;
+          state.canAutoProceed = true;
+          state.consecutiveContinuations = 0;
+          state.suppressUntil = 0;
+          state.isAutoInjecting = false;
+          state.isNotifying = false;
+          autoEnabledSessions.add(sessionID);
+          output.parts.push(
+            createInternalPrompt(
+              [
+                buildAutopilotActiveBanner('enabled'),
+                `Autopilot is now active. Continue the current work — autopilot will keep injecting "continue" up to ${state.maxLoops} times whenever the session goes idle. Type /autopilot off to stop.`,
+              ].join('\n\n'),
+            ),
+          );
+          break;
         }
 
         bumpRunVersion(sessionID);
