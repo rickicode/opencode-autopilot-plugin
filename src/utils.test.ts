@@ -16,6 +16,13 @@ assertEqual(
   'parses --loops flag',
 );
 
+const multilineTask = parseAutopilotCommand('"line one\nline two"');
+assertEqual(
+  multilineTask,
+  { action: 'start', task: 'line one\nline two' },
+  'parses multiline task input',
+);
+
 assertEqual(parseAutopilotCommand('off'), { action: 'off' }, 'parses off command');
 assertEqual(
   parseAutopilotCommand('status'),

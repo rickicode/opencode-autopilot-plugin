@@ -6,6 +6,12 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test \"dist/*.test.js\"",
+    "test:bootstrap": "npm run build && node --test \"dist/bootstrap.test.js\"",
+    "bootstrap:dry-run": "npm run build && AUTOPILOT_DRY_RUN=1 OPENCODE_CONFIG_PATH=${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json} node scripts/install-autopilot.mjs",
+    "bootstrap:install": "npm run build && OPENCODE_CONFIG_PATH=${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json} node scripts/install-autopilot.mjs",
+    "bootstrap:verify": "npm run build && node --test \"dist/bootstrap.test.js\"",
+    "readiness:check": "npm run build && node --input-type=module -e \"const configPath = process.env.OPENCODE_CONFIG_PATH || ((process.env.HOME || '') + '/.config/opencode/opencode.json'); import('./dist/bootstrap.js').then(({ readCurrentReadiness }) => { const result = readCurrentReadiness(configPath); console.log(result.steps.join('\\n')); console.log('ready=' + String(result.readiness.ready)); console.log('missing=' + result.readiness.missing.join(',')); process.exit(result.readiness.ready ? 0 : 1); }).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });\"",
     "watch": "tsc --watch",
     "clean": "rm -rf dist"
   },
