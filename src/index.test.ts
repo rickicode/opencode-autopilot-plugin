@@ -82,6 +82,10 @@ async function run(): Promise<void> {
     'plugin directly exposes slim-style autopilot command template for runtime registration',
   );
   assert(
+    pluginAutopilotCommand.agent === 'superpowers',
+    'plugin directly routes /autopilot through the superpowers primary agent',
+  );
+  assert(
     typeof pluginAutopilotCommand.description === 'string' &&
       pluginAutopilotCommand.description.includes('/autopilot'),
     'plugin directly exposes autopilot command description for runtime registration',
@@ -131,6 +135,10 @@ async function run(): Promise<void> {
   assert(
     autopilotCommand.template === 'Call the autopilot tool with raw=$ARGUMENTS',
     'config hook preserves slim-style slash-command template for autopilot discovery',
+  );
+  assert(
+    autopilotCommand.agent === 'superpowers',
+    'config hook routes slash-command fallback through superpowers',
   );
   assert(
     typeof autopilotCommand.description === 'string' &&

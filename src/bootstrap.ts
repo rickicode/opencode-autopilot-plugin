@@ -11,6 +11,11 @@ import {
   getLocalAutopilotPluginEntry,
   SUPERPOWERS_PLUGIN,
 } from './config-merge';
+import {
+  AUTOPILOT_COMMAND_CONFIG,
+  AUTOPILOT_COMMAND_DESCRIPTION,
+  AUTOPILOT_COMMAND_TEMPLATE,
+} from './command-config';
 import { evaluateReadiness } from './readiness';
 
 export interface BootstrapOptions {
@@ -36,9 +41,10 @@ const BOOTSTRAP_STEPS = [
 ] as const;
 
 const AUTOPILOT_COMMAND_FILE = `---
-description: Run the /autopilot slash command for autonomous task execution
+description: ${AUTOPILOT_COMMAND_DESCRIPTION}
+agent: ${AUTOPILOT_COMMAND_CONFIG.agent}
 ---
-Call the autopilot tool with raw=$ARGUMENTS
+${AUTOPILOT_COMMAND_TEMPLATE}
 `;
 
 class BootstrapError extends Error {
@@ -81,6 +87,14 @@ export function getReadinessFromConfig(config: Record<string, any>) {
     config.agent && typeof config.agent === 'object' && !Array.isArray(config.agent)
       ? Object.keys(config.agent)
       : [];
+  const commands =
+    config.command && typeof config.command === 'object' && !Array.isArray(config.command)
+      ? config.command as Record<string, any>
+      : {};
+  const autopilotCommand =
+    commands.autopilot && typeof commands.autopilot === 'object' && !Array.isArray(commands.autopilot)
+      ? commands.autopilot as Record<string, any>
+      : null;
 
   return evaluateReadiness({
     configReadable: true,
@@ -89,7 +103,9 @@ export function getReadinessFromConfig(config: Record<string, any>) {
     ),
     autopilotInstalled:
       pluginEntries.some((entry) => entry === localAutopilotPlugin)
-      && availableAgents.includes('superpowers'),
+      && availableAgents.includes('superpowers')
+      && autopilotCommand?.template === AUTOPILOT_COMMAND_TEMPLATE
+      && autopilotCommand?.agent === AUTOPILOT_COMMAND_CONFIG.agent,
     availableAgents,
   });
 }
