@@ -12,9 +12,10 @@ import {
   SUPERPOWERS_PLUGIN,
 } from './config-merge';
 import {
-  AUTOPILOT_COMMAND_CONFIG,
-  AUTOPILOT_COMMAND_DESCRIPTION,
-  AUTOPILOT_COMMAND_TEMPLATE,
+  AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG,
+  AUTOPILOT_SUPERPOWERS_COMMAND_DESCRIPTION,
+  AUTOPILOT_SUPERPOWERS_COMMAND_NAME,
+  AUTOPILOT_SUPERPOWERS_COMMAND_TEMPLATE,
 } from './command-config';
 import { evaluateReadiness } from './readiness';
 
@@ -41,10 +42,10 @@ const BOOTSTRAP_STEPS = [
 ] as const;
 
 const AUTOPILOT_COMMAND_FILE = `---
-description: ${AUTOPILOT_COMMAND_DESCRIPTION}
-agent: ${AUTOPILOT_COMMAND_CONFIG.agent}
+description: ${AUTOPILOT_SUPERPOWERS_COMMAND_DESCRIPTION}
+agent: ${AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG.agent}
 ---
-${AUTOPILOT_COMMAND_TEMPLATE}
+${AUTOPILOT_SUPERPOWERS_COMMAND_TEMPLATE}
 `;
 
 class BootstrapError extends Error {
@@ -92,8 +93,8 @@ export function getReadinessFromConfig(config: Record<string, any>) {
       ? config.command as Record<string, any>
       : {};
   const autopilotCommand =
-    commands.autopilot && typeof commands.autopilot === 'object' && !Array.isArray(commands.autopilot)
-      ? commands.autopilot as Record<string, any>
+    commands[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] && typeof commands[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] === 'object' && !Array.isArray(commands[AUTOPILOT_SUPERPOWERS_COMMAND_NAME])
+      ? commands[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] as Record<string, any>
       : null;
 
   return evaluateReadiness({
@@ -104,8 +105,8 @@ export function getReadinessFromConfig(config: Record<string, any>) {
     autopilotInstalled:
       pluginEntries.some((entry) => entry === localAutopilotPlugin)
       && availableAgents.includes('superpowers')
-      && autopilotCommand?.template === AUTOPILOT_COMMAND_TEMPLATE
-      && autopilotCommand?.agent === AUTOPILOT_COMMAND_CONFIG.agent,
+      && autopilotCommand?.template === AUTOPILOT_SUPERPOWERS_COMMAND_TEMPLATE
+      && autopilotCommand?.agent === AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG.agent,
     availableAgents,
   });
 }
@@ -185,7 +186,7 @@ function tryReadConfigForDryRun(configPath: string): Record<string, any> | null 
 function writeAutopilotCommandFile(configPath: string): void {
   const configDir = dirname(configPath);
   const commandsDir = join(configDir, 'commands');
-  const commandPath = join(commandsDir, 'autopilot.md');
+  const commandPath = join(commandsDir, `${AUTOPILOT_SUPERPOWERS_COMMAND_NAME}.md`);
 
   mkdirSync(commandsDir, { recursive: true });
   writeFileSync(commandPath, AUTOPILOT_COMMAND_FILE);

@@ -32,7 +32,7 @@ import { getSuperpowersDelegationGuide } from './subagents';
 
 type ParsedAutopilotCommand = ReturnType<typeof parseAutopilotCommand>;
 
-const MAX_STAGNATION_LOOPS = 3;
+const MAX_STAGNATION_LOOPS = 7;
 
 function buildContinuationPrompt(
   state: AutopilotState,
@@ -939,6 +939,11 @@ function createAutopilotHookInternal(
 
     // Safety gate: max consecutive continuations
     if (state.consecutiveContinuations >= config.maxConsecutiveContinuations) {
+      await stopAutopilot(
+        sessionID,
+        state,
+        `Autopilot stopped: reached max consecutive idle auto-continues (${config.maxConsecutiveContinuations}).\n\nUse /autopilot resume to continue, or /autopilot off to disable.`,
+      );
       return;
     }
 

@@ -1,8 +1,8 @@
-# OpenCode Autopilot Plugin
+# opencode-autopilot-superpowers
 
-Autopilot mode for OpenCode. It turns a normal task request into a bounded autonomous workflow that follows the Superpowers process, shows loop status, prefers delegated execution, and stops at safety checkpoints.
+Autopilot mode for OpenCode from the `opencode-autopilot-superpowers` package. It turns a normal task request into a bounded autonomous workflow that follows the Superpowers process, shows loop status, prefers delegated execution, and stops at safety checkpoints.
 
-This repository is the **maintained TypeScript source** for the autopilot plugin, bootstrap installer, and test suite.
+This repository is the **maintained TypeScript source** for the `opencode-autopilot-superpowers` package, the `/autopilot` plugin flow, the bootstrap installer, and the test suite.
 
 ## Quick Start
 
@@ -212,7 +212,9 @@ ctx.config.autopilot.defaultMaxLoops
 
 However, top-level `autopilot` config in `~/.config/opencode/opencode.json` was previously rejected by OpenCode schema, so do not add this to global config unless OpenCode adds schema support for plugin-specific config.
 
-Current safe default is `10`, clamped to `1..30`.
+Current safe default is `7`, clamped to `1..30`.
+
+By default, autopilot auto-continues on each eligible idle cycle for up to 7 loops unless the current command or runtime config overrides the loop budget. The default phase-loop, repeated-idle, and consecutive-continuation safety gates are aligned to allow those 7 consecutive idle continuations before stopping.
 
 ## Installation
 

@@ -7,3 +7,4 @@ dist/
 context-snapshot.json
 .a5c/
 *.tgz
+state.md

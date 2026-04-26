@@ -892,11 +892,12 @@ async function run(): Promise<void> {
   const stalledScenario = createPromptCollector();
   const stalledPrompts = stalledScenario.prompts;
   const stalledHook = createAutopilotHook(stalledScenario.ctx, {
-    defaultMaxLoops: 5,
-    maxLoopsPerPhase: 5,
+    defaultMaxLoops: 20,
+    maxLoopsPerPhase: 20,
     cooldownMs: 0,
     questionDetection: false,
     todoAware: false,
+    maxConsecutiveContinuations: 20,
   });
   await stalledHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stalled', arguments: '"refine flow"' },
@@ -909,7 +910,7 @@ async function run(): Promise<void> {
     },
   });
 
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     await stalledHook.handleEvent({
       event: { type: 'session.idle', properties: { sessionID: 'session-stalled' } },
     });
@@ -2128,8 +2129,14 @@ async function run(): Promise<void> {
 
   assertEqual(
     consecutiveScenario.prompts.length,
-    2,
-    'stops auto-continue after reaching maxConsecutiveContinuations (2)',
+    3,
+    'stops auto-continue with a visible prompt after reaching maxConsecutiveContinuations (2)',
+  );
+  assert(
+    consecutiveScenario.prompts[2]?.body.parts[0]?.text?.includes(
+      'Autopilot stopped: reached max consecutive idle auto-continues (2).',
+    ),
+    'consecutive continuation limit emits an explicit stop reason',
   );
 
   // Verify that consecutive counter resets after user activity (busy)
@@ -2168,6 +2175,57 @@ async function run(): Promise<void> {
     consecutiveResetScenario.prompts.length,
     2,
     'busy resets consecutive counter so next idle continues',
+  );
+
+  const defaultConsecutiveScenario = createPromptCollector();
+  const defaultConsecutiveHook = createAutopilotHook(defaultConsecutiveScenario.ctx, {
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+  });
+  await defaultConsecutiveHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-default-consecutive', arguments: '"default consecutive test"' },
+    { parts: [] },
+  );
+
+  for (let i = 0; i < 7; i += 1) {
+    await defaultConsecutiveHook.handleEvent({
+      event: { type: 'session.idle', properties: { sessionID: 'session-default-consecutive' } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  assertEqual(
+    defaultConsecutiveScenario.prompts.length,
+    7,
+    'default config allows 7 consecutive idle auto-continues',
+  );
+
+  await defaultConsecutiveHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-default-consecutive' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    defaultConsecutiveScenario.prompts.length,
+    8,
+    'default consecutive continuation guard emits a visible stop on the 8th idle',
+  );
+  assert(
+    defaultConsecutiveScenario.prompts[7]?.body.parts[0]?.text?.includes(
+      'Autopilot stopped: reached max consecutive idle auto-continues (7).',
+    ),
+    '8th idle surfaces the consecutive continuation stop reason',
+  );
+
+  const defaultConsecutiveStatusOutput: CommandOutput = { parts: [] };
+  await defaultConsecutiveHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-default-consecutive', arguments: 'status' },
+    defaultConsecutiveStatusOutput,
+  );
+  assert(
+    defaultConsecutiveStatusOutput.parts[0]?.text?.includes('Autopilot: disabled'),
+    'consecutive continuation limit disables autopilot after stopping',
   );
 
   // =================================================================

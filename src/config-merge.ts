@@ -1,5 +1,8 @@
 import { copyFileSync, existsSync } from 'node:fs';
-import { AUTOPILOT_COMMAND_CONFIG } from './command-config';
+import {
+  AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG,
+  AUTOPILOT_SUPERPOWERS_COMMAND_NAME,
+} from './command-config';
 
 export const SUPERPOWERS_PLUGIN =
   'superpowers@git+https://github.com/obra/superpowers.git';
@@ -183,15 +186,15 @@ export function mergeOpenCodeConfig(
     conflicts.push('command');
   } else {
     const command = isObjectRecord(config.command) ? { ...config.command } : {};
-    const existingAutopilotCommand = command.autopilot;
+    const existingAutopilotCommand = command[AUTOPILOT_SUPERPOWERS_COMMAND_NAME];
 
-    command.autopilot = isObjectRecord(existingAutopilotCommand)
+    command[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] = isObjectRecord(existingAutopilotCommand)
       ? {
           ...existingAutopilotCommand,
-          ...AUTOPILOT_COMMAND_CONFIG,
+          ...AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG,
         }
       : {
-          ...AUTOPILOT_COMMAND_CONFIG,
+          ...AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG,
         };
 
     config.command = command;

@@ -63,7 +63,10 @@ async function run(): Promise<void> {
     execute?: (args: { task?: string; raw?: string; maxLoops?: number }) => Promise<string>;
   };
 
-  assert(plugin.name === 'autopilot', 'registers autopilot plugin name');
+  assert(
+    plugin.name === 'opencode-autopilot-superpowers',
+    'registers opencode-autopilot-superpowers plugin name',
+  );
   assert(typeof plugin.config === 'function', 'exposes config hook');
   assert(typeof plugin.command === 'object', 'exposes plugin command registry');
   assert(typeof autopilotTool === 'object', 'registers autopilot tool');
@@ -144,6 +147,15 @@ async function run(): Promise<void> {
     typeof autopilotCommand.description === 'string' &&
       autopilotCommand.description.includes('/autopilot'),
     'config hook registers slash-command description for autopilot',
+  );
+
+  assert(
+    commandRegistry['autopilot-superpowers'] === undefined,
+    'config hook does not register a renamed slash command alias',
+  );
+  assert(
+    toolRegistry['autopilot-superpowers'] === undefined,
+    'plugin does not register a renamed tool alias',
   );
 
   // Config hook sets default_agent

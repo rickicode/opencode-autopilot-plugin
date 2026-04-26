@@ -2,10 +2,16 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { createAutopilotHook } from './autopilot-hook';
 import type { AutopilotConfig, AutopilotHook, CommandOutput } from './types';
 import { buildSubagentConfigs, buildSuperpowersConfig } from './subagents';
-import { AUTOPILOT_COMMAND_CONFIG } from './command-config';
+import {
+  AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG,
+  AUTOPILOT_SUPERPOWERS_COMMAND_NAME,
+  AUTOPILOT_SUPERPOWERS_CONFIG_KEY,
+  AUTOPILOT_SUPERPOWERS_PLUGIN_NAME,
+  AUTOPILOT_SUPERPOWERS_TOOL_NAME,
+} from './command-config';
 
 const AutopilotPlugin: Plugin = async (ctx) => {
-  const userConfig = (ctx.config?.autopilot ?? {}) as Partial<AutopilotConfig>;
+  const userConfig = (ctx.config?.[AUTOPILOT_SUPERPOWERS_CONFIG_KEY] ?? {}) as Partial<AutopilotConfig>;
   const hook: AutopilotHook = createAutopilotHook(ctx, userConfig);
 
   // Import tool dynamically (ESM module)
@@ -65,16 +71,16 @@ const AutopilotPlugin: Plugin = async (ctx) => {
   };
 
   return {
-    name: 'autopilot',
+    name: AUTOPILOT_SUPERPOWERS_PLUGIN_NAME,
 
     agent: agents,
 
     command: {
-      autopilot: AUTOPILOT_COMMAND_CONFIG,
+      [AUTOPILOT_SUPERPOWERS_COMMAND_NAME]: AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG,
     },
 
     tool: {
-      autopilot: autopilotTool,
+      [AUTOPILOT_SUPERPOWERS_TOOL_NAME]: autopilotTool,
     },
 
     config: async (opencodeConfig: Record<string, unknown>) => {
@@ -108,20 +114,20 @@ const AutopilotPlugin: Plugin = async (ctx) => {
         }
       }
 
-      // Register /autopilot command
+      // Register /autopilot-superpowers command
       const commandRegistry =
         opencodeConfig.command && typeof opencodeConfig.command === 'object'
           ? (opencodeConfig.command as Record<string, unknown>)
           : {};
 
-      const existingAutopilotCommand =
-        commandRegistry.autopilot && typeof commandRegistry.autopilot === 'object'
-          ? (commandRegistry.autopilot as Record<string, unknown>)
+      const existingAutopilotSuperpowersCommand =
+        commandRegistry[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] && typeof commandRegistry[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] === 'object'
+          ? (commandRegistry[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] as Record<string, unknown>)
           : {};
 
-      commandRegistry.autopilot = {
-        ...existingAutopilotCommand,
-        ...AUTOPILOT_COMMAND_CONFIG,
+      commandRegistry[AUTOPILOT_SUPERPOWERS_COMMAND_NAME] = {
+        ...existingAutopilotSuperpowersCommand,
+        ...AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG,
       };
 
       opencodeConfig.command = commandRegistry;

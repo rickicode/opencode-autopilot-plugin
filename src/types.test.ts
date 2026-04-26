@@ -88,7 +88,7 @@ const state: AutopilotState = {
   lastVerifyIssueName: null,
   lastVerifiedTaskTitle: null,
   lastCompletedTaskTitle: null,
-  maxLoops: 10,
+  maxLoops: 7,
   currentLoop: 1,
   currentPhase: 'design',
   phaseLoopCount: 1,
@@ -131,9 +131,10 @@ void invalidOutputMissingText;
 void invalidOutputWrongType;
 
 if (
-  config.defaultMaxLoops !== 10 ||
-  config.maxLoopsPerPhase !== 5 ||
+  config.defaultMaxLoops !== 7 ||
+  config.maxLoopsPerPhase !== 7 ||
   config.cooldownMs !== 3000 ||
+  config.maxConsecutiveContinuations !== 7 ||
   config.stopOnError !== true ||
   config.stopBeforeMerge !== true ||
   !state.enabled ||

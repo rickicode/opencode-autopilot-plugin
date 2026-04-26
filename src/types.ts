@@ -191,12 +191,12 @@ export interface AutopilotHook {
 }
 
 export const DEFAULT_CONFIG: AutopilotConfig = {
-  defaultMaxLoops: 10,
-  maxLoopsPerPhase: 5,
+  defaultMaxLoops: 7,
+  maxLoopsPerPhase: 7,
   cooldownMs: 3000,
   stopOnError: true,
   stopBeforeMerge: true,
-  maxConsecutiveContinuations: 5,
+  maxConsecutiveContinuations: 7,
   suppressAfterAbortMs: 5000,
   todoAware: true,
   questionDetection: true,
