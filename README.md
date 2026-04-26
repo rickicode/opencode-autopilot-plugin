@@ -74,25 +74,13 @@ Starts autopilot with the default loop budget.
 
 ### Set Loop Budget
 
-Prefix form:
+Supported form:
 
 ```bash
 /autopilot --loops 15 "refactor database layer"
 ```
 
-Suffix form:
-
-```bash
-/autopilot "refactor database layer" --loops 15
-```
-
-Loop budget is clamped to `1..30`.
-
-Examples:
-
-- `--loops 0` becomes `1`
-- `--loops 999` becomes `30`
-- Float values are truncated in tool mode, e.g. `2.9` becomes `2`
+`--loops` must appear before the quoted task and must be a positive integer.
 
 ### Status
 
@@ -124,6 +112,8 @@ Optional loop override:
 /autopilot resume --loops 8
 ```
 
+This replaces the stored loop budget for the resumed run.
+
 ## Parsing Rules
 
 Control words are only treated as controls when unquoted:
@@ -139,7 +129,6 @@ Quoted control words are treated as task text:
 /autopilot "resume"
 /autopilot "status"
 /autopilot --loops 5 "off"
-/autopilot "resume" --loops 7
 ```
 
 Malformed quotes are rejected as usage errors instead of triggering control actions:
@@ -155,7 +144,9 @@ Malformed loop flags are also rejected:
 
 ```bash
 /autopilot --loops 5
+/autopilot --loops 0 "task"
 /autopilot --loops abc create x
+/autopilot "refactor database layer" --loops 15
 /autopilot create x --loops nope
 ```
 
@@ -176,11 +167,11 @@ Autopilot must not merge, create PRs, or make irreversible branch decisions with
 
 ## Superpowers Integration
 
-The Superpowers agent automatically activates autopilot for FULL tasks, except when the current message is already an `/autopilot` command or already contains the injected autopilot marker.
+The `superpowers` agent can automatically activate autopilot when the current work references approved Superpowers spec and plan artifacts, except when the current message is already an `/autopilot` command or already contains the injected autopilot marker.
 
-Artifact-based execution can also auto-start when the current work references supported Superpowers spec/plan artifacts under `docs/superpowers-optimized/specs` or `docs/superpowers-optimized/plans`.
+Artifact-based execution can auto-start when the current work references approved Superpowers spec and plan artifacts under `docs/superpowers/specs` and `docs/superpowers/plans`, using `-approved.md` filenames as the approval marker.
 
-That artifact-triggered path does not auto-start when the current action is design-doc/spec editing or review.
+That artifact-triggered path does not auto-start when approval is still pending or when the current action is design-doc/spec editing or review.
 
 Important double-activation guard:
 
@@ -287,9 +278,10 @@ The bootstrap wizard performs this user-facing sequence:
 A successful bootstrap leaves your OpenCode config in a state where:
 
 - the plugin declaration includes `superpowers@git+https://github.com/obra/superpowers.git`
+- the plugin declaration includes the local autopilot plugin path for this repository
 - the Superpowers plugin entry is declared
-- the managed autopilot agents are provisioned
-- `autopilot-orchestrator` is available as the managed default agent when no conflicting default is already pinned
+- the managed autopilot agents are provisioned as `superpowers`, `superpowers-explorer`, `superpowers-implementer`, `superpowers-knowledge`, `superpowers-designer`, and `superpowers-reviewer`
+- `superpowers` is available as the managed default agent when no conflicting default is already pinned
 - `npm run readiness:check` reports the **current installed state** as ready
 
 ### Supported assumptions

@@ -1,11 +1,14 @@
 import {
   existsSync,
+  mkdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   mergeOpenCodeConfig,
   backupConfigFile,
+  getLocalAutopilotPluginEntry,
   SUPERPOWERS_PLUGIN,
 } from './config-merge';
 import { evaluateReadiness } from './readiness';
@@ -31,6 +34,12 @@ const BOOTSTRAP_STEPS = [
   'provision-agents',
   'validate-readiness',
 ] as const;
+
+const AUTOPILOT_COMMAND_FILE = `---
+description: Run the /autopilot slash command for autonomous task execution
+---
+Call the autopilot tool with raw=$ARGUMENTS
+`;
 
 class BootstrapError extends Error {
   constructor(
@@ -67,6 +76,7 @@ function buildNextCommand(configPath: string, dryRun: boolean): string {
 
 export function getReadinessFromConfig(config: Record<string, any>) {
   const pluginEntries = Array.isArray(config.plugin) ? config.plugin : [];
+  const localAutopilotPlugin = getLocalAutopilotPluginEntry();
   const availableAgents =
     config.agent && typeof config.agent === 'object' && !Array.isArray(config.agent)
       ? Object.keys(config.agent)
@@ -77,7 +87,9 @@ export function getReadinessFromConfig(config: Record<string, any>) {
     superpowersDeclared: pluginEntries.some(
       (entry) => entry === SUPERPOWERS_PLUGIN,
     ),
-    autopilotInstalled: availableAgents.includes('autopilot-orchestrator'),
+    autopilotInstalled:
+      pluginEntries.some((entry) => entry === localAutopilotPlugin)
+      && availableAgents.includes('superpowers'),
     availableAgents,
   });
 }
@@ -154,6 +166,15 @@ function tryReadConfigForDryRun(configPath: string): Record<string, any> | null 
   }
 }
 
+function writeAutopilotCommandFile(configPath: string): void {
+  const configDir = dirname(configPath);
+  const commandsDir = join(configDir, 'commands');
+  const commandPath = join(commandsDir, 'autopilot.md');
+
+  mkdirSync(commandsDir, { recursive: true });
+  writeFileSync(commandPath, AUTOPILOT_COMMAND_FILE);
+}
+
 export async function bootstrapAutopilot(
   options: BootstrapOptions,
 ): Promise<BootstrapResult> {
@@ -161,7 +182,9 @@ export async function bootstrapAutopilot(
 
   if (options.dryRun) {
     const existingConfig = tryReadConfigForDryRun(options.configPath);
-    const merged = existingConfig === null ? null : mergeOpenCodeConfig(existingConfig);
+    const merged = existingConfig === null
+      ? null
+      : mergeOpenCodeConfig(existingConfig, getLocalAutopilotPluginEntry());
 
     return {
       steps,
@@ -174,10 +197,11 @@ export async function bootstrapAutopilot(
 
   const existingConfig = readConfigForBootstrap(options.configPath);
   const backupPath = backupConfigFile(options.configPath);
-  const merged = mergeOpenCodeConfig(existingConfig);
+  const merged = mergeOpenCodeConfig(existingConfig, getLocalAutopilotPluginEntry());
 
   try {
     writeFileSync(options.configPath, JSON.stringify(merged.config, null, 2));
+    writeAutopilotCommandFile(options.configPath);
   } catch {
     throw new BootstrapError(
       'CONFIG_WRITE_FAILED',

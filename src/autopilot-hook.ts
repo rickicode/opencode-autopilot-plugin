@@ -19,15 +19,16 @@ import {
   parseAutopilotCommand,
   createInternalPrompt,
   formatStatus,
-  buildOrchestratorStartupGuidance,
-  buildOrchestratorContinuationGuidance,
+  buildSuperpowersStartupGuidance,
+  buildSuperpowersContinuationGuidance,
   isQuestion,
   countIncompleteTodos,
   buildCountdownNotification,
   buildTaskContextFromSuperpowers,
+  readSuperpowersArtifacts,
 } from './utils';
 import { AUTOPILOT_AGENT_IDS } from './agent-manifest';
-import { getOrchestratorDelegationGuide } from './subagents';
+import { getSuperpowersDelegationGuide } from './subagents';
 
 type ParsedAutopilotCommand = ReturnType<typeof parseAutopilotCommand>;
 
@@ -38,13 +39,18 @@ function buildContinuationPrompt(
   assessment: IdleAssessment,
   loopNumber = state.currentLoop,
 ): string {
-  return buildOrchestratorContinuationGuidance({
-    task: state.task,
+  const verification = getActiveTaskVerification(state);
+  return buildSuperpowersContinuationGuidance({
+    task: state.activeTaskTitle
+      ? `${state.task}\nActive execute task: ${state.activeTaskTitle}`
+      : state.task,
     loopNumber,
     maxLoops: state.maxLoops,
     assessmentMessage: assessment.message,
     lastRecommendation:
       assessment.reason === 'blocked_soft' ? null : state.lastRecommendation,
+    activeTaskVerification: verification,
+    currentPhase: state.currentPhase,
   });
 }
 
@@ -90,32 +96,171 @@ function buildStartupInstructions(
     }
   }
 
-  const delegationGuide = getOrchestratorDelegationGuide();
+  const delegationGuide = getSuperpowersDelegationGuide();
+  const verification = getActiveTaskVerification(state);
   const fullDelegationGuide = taskContext
     ? `${delegationGuide}\n\n${taskContext}`
     : delegationGuide;
+  const enrichedDelegationGuide = verification.length > 0
+    ? [
+        fullDelegationGuide,
+        '### Active Task Verification',
+        ...verification.map((item) => `- ${item}`),
+      ].join('\n\n').replace('\n\n- ', '\n- ')
+    : fullDelegationGuide;
 
-  return buildOrchestratorStartupGuidance({
-    task: state.task,
+  return buildSuperpowersStartupGuidance({
+    task: state.activeTaskTitle
+      ? `${state.task}\nActive execute task: ${state.activeTaskTitle}`
+      : state.task,
     maxLoops: state.maxLoops,
     executeStopLine,
     completeLine,
     completeStopLine,
     completeBehaviorLine,
-    delegationGuide: fullDelegationGuide,
+    delegationGuide: enrichedDelegationGuide,
   });
+}
+
+function hydrateExecutionStateFromArtifacts(
+  state: AutopilotState,
+  projectDir?: string,
+): void {
+  state.activeSpecPath = null;
+  state.activePlanPath = null;
+  state.planTasks = [];
+  state.activeTaskId = null;
+  state.activeTaskTitle = null;
+  state.pendingTaskIds = [];
+  state.completedTaskIds = [];
+  state.verifyOutcome = null;
+  state.lastVerifyIssueName = null;
+  state.lastVerifiedTaskTitle = null;
+  state.lastCompletedTaskTitle = null;
+
+  if (!projectDir) {
+    return;
+  }
+
+  const artifacts = readSuperpowersArtifacts(projectDir);
+  if (!artifacts.hasSuperpowers) {
+    return;
+  }
+
+  state.activeSpecPath = artifacts.specPaths[0] ?? null;
+  const activePlan = artifacts.planDocuments.find((plan) => plan.tasks.length > 0);
+  if (!activePlan) {
+    state.activePlanPath = artifacts.planPaths[0] ?? null;
+    return;
+  }
+
+  state.activePlanPath = activePlan.path;
+  state.planTasks = activePlan.tasks.map((task) => ({
+    ...task,
+    verification: [...task.verification],
+  }));
+
+  const activeTask =
+    activePlan.tasks.find((task) => task.status !== 'completed') ?? activePlan.tasks[0];
+  state.activeTaskId = activeTask?.id ?? null;
+  if (state.activeTaskId) {
+    markTaskStatus(state, state.activeTaskId, 'in_progress');
+  } else {
+    syncDerivedTaskState(state);
+  }
+
+  const lastCompletedTask = [...state.planTasks]
+    .reverse()
+    .find((task) => task.status === 'completed');
+  state.lastCompletedTaskTitle = lastCompletedTask?.title ?? null;
+  state.lastVerifiedTaskTitle = null;
 }
 
 function getIdleContinuationMessage(state: AutopilotState): string {
   if (state.canAutoProceed && state.lastRecommendation) {
+    const verification = getActiveTaskVerification(state);
     return [
       `Continue using the previous recommendation: ${state.lastRecommendation}.`,
+      ...(verification.length > 0
+        ? ['Active task verification:', ...verification.map((item) => `- ${item}`)]
+        : []),
       'Do not stop only to ask for low-risk directional confirmation.',
       'Stop only for material ambiguity, a real blocker, or an irreversible decision.',
     ].join('\n');
   }
 
   return 'Continue with next step. Press Esc to stop.';
+}
+
+function getExecutionFocus(state: AutopilotState): string {
+  if (!state.activeTaskTitle) {
+    return state.task;
+  }
+
+  return `the active plan task "${state.activeTaskTitle}" for: ${state.task}`;
+}
+
+function getActiveTaskVerification(state: AutopilotState): string[] {
+  if (!state.activeTaskId) {
+    return [];
+  }
+
+  const activeTask = state.planTasks.find((task) => task.id === state.activeTaskId);
+  return activeTask ? [...activeTask.verification] : [];
+}
+
+function getActiveTask(state: AutopilotState) {
+  if (!state.activeTaskId) {
+    return null;
+  }
+
+  return state.planTasks.find((task) => task.id === state.activeTaskId) ?? null;
+}
+
+function syncDerivedTaskState(state: AutopilotState): void {
+  state.pendingTaskIds = state.planTasks
+    .filter((task) => task.status !== 'completed')
+    .map((task) => task.id);
+  state.completedTaskIds = state.planTasks
+    .filter((task) => task.status === 'completed')
+    .map((task) => task.id);
+
+  const activeTask = getActiveTask(state);
+  state.activeTaskTitle = activeTask?.title ?? null;
+}
+
+function markTaskStatus(
+  state: AutopilotState,
+  taskId: string | null,
+  status: 'pending' | 'in_progress' | 'completed',
+): void {
+  if (!taskId) {
+    return;
+  }
+
+  const task = state.planTasks.find((candidate) => candidate.id === taskId);
+  if (!task) {
+    return;
+  }
+
+  task.status = status;
+  syncDerivedTaskState(state);
+}
+
+function activeTaskRequiresVerification(state: AutopilotState): boolean {
+  return getActiveTaskVerification(state).length > 0;
+}
+
+function canFinalizePlanCompletion(state: AutopilotState): boolean {
+  if (state.planTasks.length === 0) {
+    return true;
+  }
+
+  if (state.activeTaskId || state.pendingTaskIds.length > 0) {
+    return false;
+  }
+
+  return !state.planTasks.some((task) => task.status === 'in_progress');
 }
 
 function getBlockedContinuationMessage(state: AutopilotState): string {
@@ -130,6 +275,50 @@ function getBlockedContinuationMessage(state: AutopilotState): string {
   ].join('\n');
 }
 
+function getVerifyPendingContinuationMessage(state: AutopilotState): string {
+  return [
+    `Verification is still pending for ${getExecutionFocus(state)}.`,
+    'Run the listed verification steps, confirm they pass, and only then advance to the next task.',
+    'Do not treat implementation as finished until the verification requirements are satisfied.',
+  ].join('\n');
+}
+
+function getVerifyFailedContinuationMessage(state: AutopilotState): string {
+  return [
+    `Fix and re-verify ${getExecutionFocus(state)}.`,
+    'Fix the verification failure, rerun the required checks, and only then advance to the next task.',
+    'Do not proceed to the next task until the verification steps pass.',
+  ].join('\n');
+}
+
+function getVerifyIssueContinuationMessage(state: AutopilotState): string {
+  return [
+    `Verification is blocked by an environment or tooling issue for ${getExecutionFocus(state)}.`,
+    'Stabilize the environment, restore the required tools, and rerun the verification steps before advancing.',
+    'Do not proceed to the next task until the verification environment is working again.',
+  ].join('\n');
+}
+
+function buildPhaseRecommendation(state: AutopilotState): string | null {
+  if (!state.task) {
+    return null;
+  }
+
+  if (state.currentPhase === 'verify' && state.verifyOutcome === 'failed') {
+    return `Fix and re-verify ${getExecutionFocus(state)}`;
+  }
+
+  if (state.currentPhase === 'verify' && state.verifyOutcome === 'issue') {
+    return `Restore the environment and re-verify ${getExecutionFocus(state)}`;
+  }
+
+  if (state.currentPhase === 'verify') {
+    return `Verify ${getExecutionFocus(state)}`;
+  }
+
+  return `Continue advancing ${getExecutionFocus(state)}`;
+}
+
 function consumeAutoProceedRecommendation(state: AutopilotState): void {
   if (state.canAutoProceed && state.lastRecommendation) {
     state.canAutoProceed = false;
@@ -138,10 +327,32 @@ function consumeAutoProceedRecommendation(state: AutopilotState): void {
 }
 
 function restoreAutoProceedRecommendation(state: AutopilotState): void {
-  if (!state.lastRecommendation && state.task) {
-    state.lastRecommendation = `Continue advancing the current phase for: ${state.task}`;
+  if (!state.lastRecommendation) {
+    state.lastRecommendation = buildPhaseRecommendation(state);
   }
   state.canAutoProceed = true;
+}
+
+function advanceToNextPlannedTask(state: AutopilotState): boolean {
+  if (!state.activeTaskId && state.pendingTaskIds.length === 0) {
+    return false;
+  }
+
+  markTaskStatus(state, state.activeTaskId, 'completed');
+
+  const nextTaskId = state.pendingTaskIds[0] ?? null;
+  if (!nextTaskId) {
+    state.activeTaskId = null;
+    state.activeTaskTitle = null;
+    return false;
+  }
+
+  state.activeTaskId = nextTaskId;
+  markTaskStatus(state, nextTaskId, 'in_progress');
+  if (!state.activeTaskTitle) {
+    state.activeTaskTitle = `Task ${nextTaskId.replace(/^task-/, '')}`;
+  }
+  return true;
 }
 
 function assessIdleReason(
@@ -164,6 +375,34 @@ function assessIdleReason(
       action: 'stop_autopilot',
       message: `Autopilot stopped: reached max loops (${state.maxLoops}).\n\nUse /autopilot resume to continue, or /autopilot off to disable.`,
       shouldIncrementLoop: false,
+    };
+  }
+
+  if (
+    state.currentPhase === 'verify' &&
+    state.verifyOutcome === 'issue' &&
+    state.lastObservedOutcome === 'blocked' &&
+    !config.stopOnError
+  ) {
+    return {
+      reason: 'verify_issue',
+      action: 'continue',
+      message: getVerifyIssueContinuationMessage(state),
+      shouldIncrementLoop: true,
+    };
+  }
+
+  if (
+    state.currentPhase === 'verify' &&
+    state.verifyOutcome === 'failed' &&
+    state.lastObservedOutcome === 'blocked' &&
+    !config.stopOnError
+  ) {
+    return {
+      reason: 'verify_failed',
+      action: 'continue',
+      message: getVerifyFailedContinuationMessage(state),
+      shouldIncrementLoop: true,
     };
   }
 
@@ -201,6 +440,15 @@ function assessIdleReason(
       message:
         'Autopilot stopped: no progress after repeated idle loops.\n\nUse /autopilot resume to continue, or /autopilot off to disable.',
       shouldIncrementLoop: false,
+    };
+  }
+
+  if (state.currentPhase === 'verify' && state.canAutoProceed && state.lastRecommendation) {
+    return {
+      reason: 'verify_pending',
+      action: 'continue',
+      message: getVerifyPendingContinuationMessage(state),
+      shouldIncrementLoop: true,
     };
   }
 
@@ -244,6 +492,9 @@ function createAutopilotHookInternal(
       superpowersDeclared,
       autopilotInstalled: true,
       availableAgents: [...AUTOPILOT_AGENT_IDS],
+      artifactPaths: ctx.directory
+        ? ['docs/superpowers/specs', 'docs/superpowers/plans']
+        : [],
     });
   }
 
@@ -254,11 +505,7 @@ function createAutopilotHookInternal(
     try {
       const fs = require('fs') as typeof import('fs');
       const path = require('path') as typeof import('path');
-      const superpowersDir = path.join(
-        ctx.directory,
-        'docs',
-        'superpowers-optimized',
-      );
+        const superpowersDir = path.join(ctx.directory, 'docs', 'superpowers');
       return fs.existsSync(superpowersDir);
     } catch {
       return false;
@@ -317,6 +564,17 @@ function createAutopilotHookInternal(
         enabled: false,
         sessionID,
         task: '',
+        activeSpecPath: null,
+        activePlanPath: null,
+        planTasks: [],
+        activeTaskId: null,
+        activeTaskTitle: null,
+        pendingTaskIds: [],
+        completedTaskIds: [],
+        verifyOutcome: null,
+        lastVerifyIssueName: null,
+        lastVerifiedTaskTitle: null,
+        lastCompletedTaskTitle: null,
         maxLoops: config.defaultMaxLoops,
         currentLoop: 0,
         currentPhase: 'design',
@@ -400,10 +658,38 @@ function createAutopilotHookInternal(
         break;
 
       case 'status':
+        const activeTask = getActiveTask(state);
+        const activeTaskVerificationRequired = activeTask
+          ? activeTask.verification.length > 0
+          : null;
+        const idleReason =
+          state.currentPhase === 'verify'
+            ? state.verifyOutcome === 'issue'
+              ? 'verify_issue'
+              : state.verifyOutcome === 'failed'
+                ? 'verify_failed'
+                : activeTaskVerificationRequired
+                  ? 'verify_pending'
+                  : null
+            : null;
+        const planTaskCounts = state.planTasks.length > 0
+          ? {
+              completed: state.planTasks.filter((task) => task.status === 'completed').length,
+              pending: state.planTasks.filter((task) => task.status !== 'completed').length,
+            }
+          : null;
         output.parts.push(
           createInternalPrompt(
             [
-              formatStatus(state),
+              formatStatus({
+                ...state,
+                activeTaskStatus: activeTask?.status ?? null,
+                activeTaskVerificationRequired,
+                idleReason,
+                verifyOutcome: state.verifyOutcome,
+                lastVerifyIssueName: state.lastVerifyIssueName,
+                planTaskCounts,
+              }),
               ...(state.lastRecommendation
                 ? [`Recommendation: ${state.lastRecommendation}`]
                 : []),
@@ -420,6 +706,14 @@ function createAutopilotHookInternal(
           return;
         }
 
+        if (parsed.maxLoops !== undefined) {
+          const maxLoopsError = validateMaxLoops(parsed.maxLoops);
+          if (maxLoopsError) {
+            output.parts.push(createInternalPrompt(`Error: ${maxLoopsError}`));
+            return;
+          }
+        }
+
         if (!ensureReady(output)) {
           return;
         }
@@ -427,7 +721,9 @@ function createAutopilotHookInternal(
         bumpRunVersion(sessionID);
         cancelPendingTimer(state);
 
-        if (state.currentLoop >= state.maxLoops) {
+        if (parsed.maxLoops !== undefined) {
+          state.maxLoops = parsed.maxLoops;
+        } else if (state.currentLoop >= state.maxLoops) {
           state.maxLoops = state.currentLoop + config.defaultMaxLoops;
         }
         if (state.phaseLoopCount >= config.maxLoopsPerPhase) {
@@ -475,13 +771,14 @@ function createAutopilotHookInternal(
 
         state.enabled = true;
         state.task = parsed.task;
+        hydrateExecutionStateFromArtifacts(state, ctx.directory);
         state.maxLoops = parsed.maxLoops ?? config.defaultMaxLoops;
         state.currentLoop = 0;
         state.currentPhase = 'design';
         state.phaseLoopCount = 0;
         state.startTime = Date.now();
         state.lastActivity = Date.now();
-        state.lastRecommendation = `Continue advancing the current phase for: ${state.task}`;
+        state.lastRecommendation = buildPhaseRecommendation(state);
         state.canAutoProceed = true;
         state.stagnationCount = 0;
         state.lastObservedOutcome = 'progress';
@@ -520,6 +817,12 @@ function createAutopilotHookInternal(
     output: CommandOutput,
   ): Promise<void> {
     output.parts.length = 0;
+
+    if (typeof input.raw === 'string' && input.raw.trim().length > 0) {
+      const parsed = parseAutopilotCommand(input.raw);
+      await executeParsedCommand(input.sessionID, parsed, output);
+      return;
+    }
 
     const maxLoopsError = validateMaxLoops(input.maxLoops);
     if (maxLoopsError) {
@@ -785,6 +1088,12 @@ function createAutopilotHookInternal(
             errorName === 'AbortError'
           ) {
             state.suppressUntil = Date.now() + config.suppressAfterAbortMs;
+          } else if (state.currentPhase === 'verify') {
+            state.verifyOutcome = 'issue';
+            state.lastVerifyIssueName = errorName ?? 'UnknownError';
+            state.lastObservedOutcome = 'blocked';
+            state.lastRecommendation = buildPhaseRecommendation(state);
+            state.canAutoProceed = true;
           }
           cancelPendingTimer(state);
         }
@@ -817,19 +1126,70 @@ function createAutopilotHookInternal(
           state.lastObservedOutcome = 'progress';
           restoreAutoProceedRecommendation(state);
         }
-      } else if (sessionID && status?.type === 'complete') {
+        } else if (sessionID && status?.type === 'complete') {
+          const state = sessions.get(sessionID);
+          if (state) {
+            bumpRunVersion(sessionID);
+            cancelPendingTimer(state);
+            if (
+              state.currentPhase !== 'verify' &&
+              state.activeTaskId &&
+              activeTaskRequiresVerification(state)
+            ) {
+              state.lastCompletedTaskTitle = state.activeTaskTitle;
+              state.verifyOutcome = 'pending';
+              state.lastVerifyIssueName = null;
+              state.currentPhase = 'verify';
+              state.phaseLoopCount = 0;
+              state.stagnationCount = 0;
+              state.lastObservedOutcome = 'progress';
+              state.lastRecommendation = buildPhaseRecommendation(state);
+              state.canAutoProceed = true;
+            } else if (advanceToNextPlannedTask(state)) {
+              state.lastVerifiedTaskTitle = state.lastCompletedTaskTitle ?? state.lastVerifiedTaskTitle;
+              state.verifyOutcome = 'passed';
+              state.lastVerifyIssueName = null;
+              state.currentPhase = 'execute';
+              state.phaseLoopCount = 0;
+              state.stagnationCount = 0;
+              state.lastObservedOutcome = 'progress';
+              state.lastRecommendation = buildPhaseRecommendation(state);
+              state.canAutoProceed = true;
+            } else if (canFinalizePlanCompletion(state)) {
+              if (state.currentPhase === 'verify') {
+                state.lastVerifiedTaskTitle = state.lastCompletedTaskTitle ?? state.lastVerifiedTaskTitle;
+                state.verifyOutcome = 'passed';
+                state.lastVerifyIssueName = null;
+              }
+              state.currentPhase = 'complete';
+              state.lastObservedOutcome = 'complete';
+              if (state.planTasks.length > 0) {
+                state.lastRecommendation = null;
+                state.canAutoProceed = false;
+              } else {
+                state.lastRecommendation = buildPhaseRecommendation(state);
+                state.canAutoProceed = true;
+              }
+            } else {
+              state.currentPhase = 'execute';
+              state.phaseLoopCount = 0;
+              state.stagnationCount = 0;
+              state.lastObservedOutcome = 'progress';
+              state.lastRecommendation = buildPhaseRecommendation(state);
+              state.canAutoProceed = true;
+            }
+          }
+        } else if (sessionID && status?.type === 'error') {
         const state = sessions.get(sessionID);
         if (state) {
           bumpRunVersion(sessionID);
           cancelPendingTimer(state);
-          state.currentPhase = 'complete';
-          state.lastObservedOutcome = 'complete';
-        }
-      } else if (sessionID && status?.type === 'error') {
-        const state = sessions.get(sessionID);
-        if (state) {
-          bumpRunVersion(sessionID);
-          cancelPendingTimer(state);
+          if (state.currentPhase === 'verify' && state.verifyOutcome !== 'issue') {
+            state.verifyOutcome = 'failed';
+            state.lastVerifyIssueName = null;
+            state.lastRecommendation = buildPhaseRecommendation(state);
+            state.canAutoProceed = true;
+          }
           state.lastObservedOutcome = 'blocked';
           if (config.stopOnError) {
             await stopAutopilot(

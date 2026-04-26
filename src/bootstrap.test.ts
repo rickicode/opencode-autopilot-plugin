@@ -16,10 +16,13 @@ import {
 } from './bootstrap';
 import {
   backupConfigFile,
+  getLocalAutopilotPluginEntry,
   MANAGED_AUTOPILOT_AGENT_IDS,
   mergeOpenCodeConfig,
   SUPERPOWERS_PLUGIN,
 } from './config-merge';
+
+const LOCAL_AUTOPILOT_PLUGIN = getLocalAutopilotPluginEntry();
 
 function getNpmCommand(): string {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -58,7 +61,19 @@ test('merge keeps unrelated plugin entries and adds superpowers plugin if missin
     plugin: ['custom-plugin'],
   });
 
-  assert.deepEqual(merged.config.plugin, ['custom-plugin', SUPERPOWERS_PLUGIN]);
+  assert.deepEqual(
+    merged.config.plugin,
+    ['custom-plugin', SUPERPOWERS_PLUGIN, LOCAL_AUTOPILOT_PLUGIN],
+  );
+  assert.deepEqual(merged.conflicts, []);
+});
+
+test('merge adds local autopilot plugin entry when missing', () => {
+  const merged = mergeOpenCodeConfig({
+    plugin: [SUPERPOWERS_PLUGIN],
+  });
+
+  assert.ok(merged.config.plugin.includes(LOCAL_AUTOPILOT_PLUGIN));
   assert.deepEqual(merged.conflicts, []);
 });
 
@@ -90,15 +105,15 @@ test('merge preserves non-object agent values and reports a conflict', () => {
   assert.deepEqual(merged.conflicts, ['agent']);
 });
 
-test('merge reports incompatible orchestrator conflict when existing user-owned agent collides', () => {
+test('merge reports incompatible superpowers conflict when existing user-owned agent collides', () => {
   const merged = mergeOpenCodeConfig({
     agent: {
-      'autopilot-orchestrator': { prompt: 'user-custom' },
+      superpowers: { prompt: 'user-custom' },
     },
   });
 
-  assert.equal(merged.config.agent['autopilot-orchestrator'].prompt, 'user-custom');
-  assert.deepEqual(merged.conflicts, ['agent.autopilot-orchestrator']);
+  assert.equal(merged.config.agent.superpowers.prompt, 'user-custom');
+  assert.deepEqual(merged.conflicts, ['agent.superpowers']);
 });
 
 test('merge preserves conflicting default_agent with warning', () => {
@@ -129,7 +144,24 @@ test('merge safely provisions managed autopilot-owned agents without conflicts',
     assert.ok(merged.config.agent[id], `expected managed agent ${id}`);
     assert.equal(merged.config.agent[id].metadata.owner, 'autopilot');
   }
-  assert.equal(merged.config.agent['autopilot-explorer'].description, 'Autopilot managed explorer agent');
+  assert.equal(merged.config.agent['superpowers-explorer'].description, 'Autopilot managed explorer agent');
+  assert.equal(merged.config.agent['autopilot-explorer'], undefined);
+});
+
+test('merge provisions managed delegated agents with opencode-compatible subagent mode', () => {
+  const merged = mergeOpenCodeConfig({
+    plugin: ['custom-plugin'],
+  });
+
+  assert.equal(merged.config.agent.superpowers.mode, 'primary');
+  assert.equal(merged.config.agent['superpowers-explorer'].mode, 'subagent');
+  assert.equal(merged.config.agent['superpowers-implementer'].mode, 'subagent');
+  assert.equal(merged.config.agent['superpowers-knowledge'].mode, 'subagent');
+  assert.equal(merged.config.agent['superpowers-designer'].mode, 'subagent');
+  assert.equal(merged.config.agent['superpowers-reviewer'].mode, 'subagent');
+  assert.equal(merged.config.default_agent, 'superpowers');
+  assert.ok(merged.config.plugin.includes(SUPERPOWERS_PLUGIN));
+  assert.ok(merged.config.plugin.includes(LOCAL_AUTOPILOT_PLUGIN));
 });
 
 test('merge preserves nested metadata for autopilot-owned managed agents', () => {
@@ -149,14 +181,38 @@ test('merge preserves nested metadata for autopilot-owned managed agents', () =>
   });
 
   assert.deepEqual(merged.conflicts, []);
-  assert.equal(merged.config.agent['autopilot-explorer'].prompt, 'keep-me');
-  assert.deepEqual(merged.config.agent['autopilot-explorer'].metadata, {
+  assert.equal(merged.config.agent['superpowers-explorer'].prompt, 'keep-me');
+  assert.deepEqual(merged.config.agent['superpowers-explorer'].metadata, {
     owner: 'autopilot',
     labels: ['existing'],
     nested: {
       keep: true,
     },
   });
+  assert.equal(merged.config.agent['autopilot-explorer'], undefined);
+});
+
+test('merge migrates legacy default_agent and removes managed legacy agent ids', () => {
+  const merged = mergeOpenCodeConfig({
+    default_agent: 'autopilot-superpowers',
+    agent: {
+      'autopilot-superpowers': {
+        metadata: { owner: 'autopilot' },
+        mode: 'primary',
+      },
+      'autopilot-reviewer': {
+        metadata: { owner: 'autopilot' },
+        prompt: 'legacy-reviewer',
+      },
+    },
+  });
+
+  assert.deepEqual(merged.conflicts, []);
+  assert.equal(merged.config.default_agent, 'superpowers');
+  assert.equal(merged.config.agent['autopilot-superpowers'], undefined);
+  assert.equal(merged.config.agent['autopilot-reviewer'], undefined);
+  assert.equal(merged.config.agent.superpowers.metadata.owner, 'autopilot');
+  assert.equal(merged.config.agent['superpowers-reviewer'].prompt, 'legacy-reviewer');
 });
 
 test('bootstrap dry-run returns ordered wizard steps and supported npm apply guidance', async () => {
@@ -292,17 +348,17 @@ test('README documents the integrated bootstrap flow and managed dependencies', 
   assert.match(readme, /not\*\* the current supported path/i);
   assert.match(readme, /curl -fsSL/);
   assert.match(readme, /obra\/superpowers/);
-  assert.match(readme, /autopilot-orchestrator/);
+  assert.match(readme, /local autopilot plugin path/i);
+  assert.match(readme, /superpowers-explorer/);
   assert.match(readme, /npm run readiness:check/);
 });
 
-test('README documents actual auto-start triggers for FULL and artifact execution flows', () => {
+test('README documents actual auto-start triggers for approved artifact execution flow', () => {
   const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8');
 
-  assert.match(readme, /automatically activates autopilot for FULL tasks/i);
-  assert.match(readme, /artifact-based execution can also auto-start/i);
-  assert.match(readme, /spec\/plan artifacts/i);
-  assert.match(readme, /does not auto-start when the current action is design-doc\/spec editing or review/i);
+  assert.match(readme, /approved superpowers spec and plan artifacts/i);
+  assert.match(readme, /artifact-based execution can auto-start/i);
+  assert.match(readme, /does not auto-start when approval is still pending or when the current action is design-doc\/spec editing or review/i);
 });
 
 test('package scripts expose full compiled test suite and readiness exit semantics', () => {
@@ -369,7 +425,7 @@ test('readiness check script exits zero for an already-installed current config'
   const configPath = join(root, 'opencode.json');
 
   writeFileSync(configPath, JSON.stringify({
-    plugin: [SUPERPOWERS_PLUGIN],
+    plugin: [SUPERPOWERS_PLUGIN, LOCAL_AUTOPILOT_PLUGIN],
     agent: Object.fromEntries(
       MANAGED_AUTOPILOT_AGENT_IDS.map((id) => [id, { prompt: `${id}-prompt` }]),
     ),
@@ -423,18 +479,37 @@ test('bootstrap readiness detection requires exact superpowers plugin membership
   const result = getReadinessFromConfig({
     plugin: [`prefix:${SUPERPOWERS_PLUGIN}:suffix`],
     agent: {
-      'autopilot-orchestrator': { prompt: 'managed' },
-      'autopilot-explorer': { prompt: 'managed' },
-      'autopilot-implementer': { prompt: 'managed' },
-      'autopilot-knowledge': { prompt: 'managed' },
-      'autopilot-designer': { prompt: 'managed' },
-      'autopilot-reviewer': { prompt: 'managed' },
+      superpowers: { prompt: 'managed' },
+      'superpowers-explorer': { prompt: 'managed' },
+      'superpowers-implementer': { prompt: 'managed' },
+      'superpowers-knowledge': { prompt: 'managed' },
+      'superpowers-designer': { prompt: 'managed' },
+      'superpowers-reviewer': { prompt: 'managed' },
     },
   });
 
   assert.equal(result.superpowersDeclared, false);
   assert.equal(result.ready, false);
-  assert.deepEqual(result.missing, ['superpowersUndeclared']);
+  assert.deepEqual(result.missing, ['superpowersUndeclared', 'autopilotMissing']);
+});
+
+test('bootstrap readiness requires local autopilot plugin membership in addition to superpowers plugin', () => {
+  const result = getReadinessFromConfig({
+    plugin: [SUPERPOWERS_PLUGIN],
+    agent: {
+      superpowers: { prompt: 'managed' },
+      'superpowers-explorer': { prompt: 'managed' },
+      'superpowers-implementer': { prompt: 'managed' },
+      'superpowers-knowledge': { prompt: 'managed' },
+      'superpowers-designer': { prompt: 'managed' },
+      'superpowers-reviewer': { prompt: 'managed' },
+    },
+  });
+
+  assert.equal(result.superpowersDeclared, true);
+  assert.equal(result.autopilotInstalled, false);
+  assert.equal(result.ready, false);
+  assert.deepEqual(result.missing, ['autopilotMissing']);
 });
 
 test('bootstrap writes merged config and backup when not dry-run', async () => {
@@ -461,11 +536,31 @@ test('bootstrap writes merged config and backup when not dry-run', async () => {
   assert.ok(result.backupPath);
   assert.equal(readFileSync(result.backupPath!, 'utf8').includes('custom-plugin'), true);
   assert.ok(writtenConfig.plugin.includes(SUPERPOWERS_PLUGIN));
+  assert.ok(writtenConfig.plugin.includes(LOCAL_AUTOPILOT_PLUGIN));
   assert.equal(writtenConfig.agent.existing.prompt, 'keep-me');
-  assert.equal(writtenConfig.default_agent, 'autopilot-orchestrator');
+  assert.equal(writtenConfig.default_agent, 'superpowers');
   for (const id of MANAGED_AUTOPILOT_AGENT_IDS) {
     assert.equal(writtenConfig.agent[id].metadata?.owner, 'autopilot');
   }
+  assert.equal(result.readiness.ready, true);
+});
+
+test('bootstrap installs a project command file for slash-command discovery', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'autopilot-command-file-'));
+  const configPath = join(root, 'opencode.json');
+
+  writeFileSync(configPath, JSON.stringify({ plugin: [] }, null, 2));
+
+  const result = await bootstrapAutopilot({
+    configPath,
+  });
+
+  const commandPath = join(root, 'commands', 'autopilot.md');
+  assert.equal(existsSync(commandPath), true);
+
+  const commandFile = readFileSync(commandPath, 'utf8');
+  assert.match(commandFile, /^---\ndescription:/);
+  assert.match(commandFile, /\n---\nCall the autopilot tool with raw=\$ARGUMENTS\s*$/);
   assert.equal(result.readiness.ready, true);
 });
 

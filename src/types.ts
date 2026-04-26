@@ -16,6 +16,8 @@ export type IdleReason =
   | 'blocked_soft'
   | 'blocked_hard'
   | 'verify_pending'
+  | 'verify_failed'
+  | 'verify_issue'
   | 'stalled_no_progress'
   | 'stalled_repeating'
   | 'complete'
@@ -38,6 +40,17 @@ export interface AutopilotState {
   enabled: boolean;
   sessionID: string;
   task: string;
+  activeSpecPath: string | null;
+  activePlanPath: string | null;
+  planTasks: ParsedPlanTask[];
+  activeTaskId: string | null;
+  activeTaskTitle: string | null;
+  pendingTaskIds: string[];
+  completedTaskIds: string[];
+  verifyOutcome: 'pending' | 'failed' | 'passed' | 'issue' | null;
+  lastVerifyIssueName: string | null;
+  lastVerifiedTaskTitle: string | null;
+  lastCompletedTaskTitle: string | null;
   maxLoops: number;
   currentLoop: number;
   currentPhase: 'design' | 'plan' | 'execute' | 'verify' | 'complete';
@@ -73,12 +86,13 @@ export interface CommandOutput {
 
 export interface ToolExecuteInput {
   sessionID: string;
-  task: string;
+  task?: string;
+  raw?: string;
   maxLoops?: number;
 }
 
 export type AutopilotAgentRole =
-  | 'orchestrator'
+  | 'superpowers'
   | 'explorer'
   | 'implementer'
   | 'knowledge'
@@ -112,7 +126,6 @@ export type ReadinessMissingReason =
   | 'autopilotMissing';
 
 export type ReadinessTriggerReason =
-  | 'full-execution'
   | 'approval-pending'
   | 'artifact-execution'
   | 'design-doc-action'
@@ -122,6 +135,8 @@ export interface ReadinessResult {
   configReadable: boolean;
   superpowersDeclared: boolean;
   autopilotInstalled: boolean;
+  installReady: boolean;
+  executionReady: boolean;
   availableAgents: string[];
   ready: boolean;
   missing: ReadinessMissingReason[];
@@ -132,6 +147,7 @@ export interface ReadinessEvaluationInput {
   superpowersDeclared: boolean;
   autopilotInstalled: boolean;
   availableAgents: string[];
+  artifactPaths?: string[];
 }
 
 export interface ExecutionTriggerInput {
@@ -144,6 +160,20 @@ export interface ExecutionTriggerInput {
 export interface ExecutionTriggerResult {
   shouldAutoStart: boolean;
   reason: ReadinessTriggerReason;
+}
+
+export interface ParsedPlanTask {
+  id: string;
+  title: string;
+  body: string;
+  verification: string[];
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+export interface ParsedPlanDocument {
+  path: string;
+  title: string | null;
+  tasks: ParsedPlanTask[];
 }
 
 export interface AutopilotHook {

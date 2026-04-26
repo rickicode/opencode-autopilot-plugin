@@ -51,6 +51,7 @@ async function run(): Promise<void> {
   const plugin = (await AutopilotPlugin(ctx)) as {
     name: string;
     agent?: Record<string, unknown>;
+    command?: Record<string, unknown>;
     tool?: Record<string, unknown>;
     'command.execute.before'?: (input: unknown, output: unknown) => Promise<void>;
     config?: (opencodeConfig: Record<string, unknown>) => Promise<void>;
@@ -59,11 +60,12 @@ async function run(): Promise<void> {
   const toolRegistry = plugin.tool as Record<string, unknown>;
   const autopilotTool = toolRegistry.autopilot as {
     description?: string;
-    execute?: (args: { task: string; maxLoops?: number }) => Promise<string>;
+    execute?: (args: { task?: string; raw?: string; maxLoops?: number }) => Promise<string>;
   };
 
   assert(plugin.name === 'autopilot', 'registers autopilot plugin name');
   assert(typeof plugin.config === 'function', 'exposes config hook');
+  assert(typeof plugin.command === 'object', 'exposes plugin command registry');
   assert(typeof autopilotTool === 'object', 'registers autopilot tool');
   assert(typeof autopilotTool.execute === 'function', 'exposes autopilot tool execute');
   assert(
@@ -72,15 +74,45 @@ async function run(): Promise<void> {
   );
   assert(typeof plugin.event === 'function', 'exposes event hook');
 
+  const pluginCommandRegistry = (plugin.command ?? {}) as Record<string, unknown>;
+  const pluginAutopilotCommand =
+    (pluginCommandRegistry.autopilot ?? {}) as Record<string, unknown>;
+  assert(
+    pluginAutopilotCommand.template === 'Call the autopilot tool with raw=$ARGUMENTS',
+    'plugin directly exposes slim-style autopilot command template for runtime registration',
+  );
+  assert(
+    typeof pluginAutopilotCommand.description === 'string' &&
+      pluginAutopilotCommand.description.includes('/autopilot'),
+    'plugin directly exposes autopilot command description for runtime registration',
+  );
+
+  // The built plugin is emitted as CommonJS; local OpenCode loading must still
+  // be able to reach the plugin function through the default export shape.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const commonJsLoaded = require('./index') as {
+    default?: unknown;
+  };
+  assert(
+    typeof commonJsLoaded.default === 'function',
+    'commonjs loader also exposes default export compatibility',
+  );
+
   // Agent registration
   assert(typeof plugin.agent === 'object', 'registers agent configs');
   const agentRegistry = plugin.agent as Record<string, Record<string, unknown>>;
-  assert(agentRegistry.orchestrator !== undefined, 'registers orchestrator agent');
+  assert(agentRegistry.superpowers !== undefined, 'registers superpowers agent');
   assert(
-    (agentRegistry.orchestrator as { mode?: string }).mode === 'primary',
-    'orchestrator is primary mode',
+    (agentRegistry.superpowers as { mode?: string }).mode === 'primary',
+    'superpowers is primary mode',
   );
-  const expectedSubagents = ['explorer', 'librarian', 'oracle', 'designer', 'fixer', 'observer'];
+  const expectedSubagents = [
+    'superpowers-explorer',
+    'superpowers-knowledge',
+    'superpowers-designer',
+    'superpowers-implementer',
+    'superpowers-reviewer',
+  ];
   for (const name of expectedSubagents) {
     assert(agentRegistry[name] !== undefined, `registers ${name} subagent`);
     assert(
@@ -97,6 +129,10 @@ async function run(): Promise<void> {
   assert(typeof commandRegistry === 'object', 'config hook initializes command registry');
   assert(typeof autopilotCommand === 'object', 'config hook registers autopilot command');
   assert(
+    autopilotCommand.template === 'Call the autopilot tool with raw=$ARGUMENTS',
+    'config hook preserves slim-style slash-command template for autopilot discovery',
+  );
+  assert(
     typeof autopilotCommand.description === 'string' &&
       autopilotCommand.description.includes('/autopilot'),
     'config hook registers slash-command description for autopilot',
@@ -104,14 +140,14 @@ async function run(): Promise<void> {
 
   // Config hook sets default_agent
   assert(
-    (opencodeConfig as { default_agent?: string }).default_agent === 'orchestrator',
-    'config hook sets orchestrator as default agent',
+    (opencodeConfig as { default_agent?: string }).default_agent === 'superpowers',
+    'config hook sets superpowers as default agent',
   );
 
   // Config hook merges agent configs
   const mergedAgents = opencodeConfig.agent as Record<string, unknown>;
   assert(mergedAgents !== undefined, 'config hook merges agents into opencodeConfig');
-  assert(mergedAgents.orchestrator !== undefined, 'config hook includes orchestrator agent');
+  assert(mergedAgents.superpowers !== undefined, 'config hook includes superpowers agent');
   for (const name of expectedSubagents) {
     assert(mergedAgents[name] !== undefined, `config hook includes ${name} agent`);
   }
@@ -127,8 +163,8 @@ async function run(): Promise<void> {
     'config hook preserves existing user agents',
   );
   assert(
-    mergedWithExisting.orchestrator !== undefined,
-    'config hook adds orchestrator alongside existing agents',
+    mergedWithExisting.superpowers !== undefined,
+    'config hook adds superpowers alongside existing agents',
   );
   assert(
     autopilotTool.description ===
@@ -217,7 +253,7 @@ async function run(): Promise<void> {
     tool?: Record<string, unknown>;
   };
   const missingSessionTool = missingSessionPlugin.tool?.autopilot as {
-    execute?: (args: { task: string; maxLoops?: number }) => Promise<string>;
+    execute?: (args: { task?: string; raw?: string; maxLoops?: number }) => Promise<string>;
   };
 
   let missingSessionError: unknown;
@@ -231,6 +267,12 @@ async function run(): Promise<void> {
     missingSessionError instanceof Error &&
       missingSessionError.message.includes('session ID is required'),
     'tool rejects execution without a session ID',
+  );
+
+  const rawStatusResult = await autopilotTool.execute?.({ raw: 'status' });
+  assert(
+    rawStatusResult?.includes('Autopilot: enabled'),
+    'tool execution accepts raw command arguments for status fallback',
   );
 }
 

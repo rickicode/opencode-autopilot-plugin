@@ -21,9 +21,9 @@ export type AutopilotAgentManifest = Record<
 >;
 
 export const AUTOPILOT_AGENT_MANIFEST: AutopilotAgentManifest = {
-  orchestrator: {
-    id: 'autopilot-orchestrator',
-    role: 'orchestrator',
+  superpowers: {
+    id: 'superpowers',
+    role: 'superpowers',
     roleFamily: 'orchestration',
     agentKind: 'primary',
     minimumPromptResponsibility:
@@ -32,7 +32,7 @@ export const AUTOPILOT_AGENT_MANIFEST: AutopilotAgentManifest = {
     fallbackTarget: null,
   },
   explorer: {
-    id: 'autopilot-explorer',
+    id: 'superpowers-explorer',
     role: 'explorer',
     roleFamily: 'exploration',
     agentKind: 'delegated-specialist',
@@ -42,7 +42,7 @@ export const AUTOPILOT_AGENT_MANIFEST: AutopilotAgentManifest = {
     fallbackTarget: 'builtin-explorer',
   },
   implementer: {
-    id: 'autopilot-implementer',
+    id: 'superpowers-implementer',
     role: 'implementer',
     roleFamily: 'implementation',
     agentKind: 'delegated-specialist',
@@ -52,7 +52,7 @@ export const AUTOPILOT_AGENT_MANIFEST: AutopilotAgentManifest = {
     fallbackTarget: 'builtin-implementer',
   },
   knowledge: {
-    id: 'autopilot-knowledge',
+    id: 'superpowers-knowledge',
     role: 'knowledge',
     roleFamily: 'knowledge',
     agentKind: 'delegated-specialist',
@@ -62,7 +62,7 @@ export const AUTOPILOT_AGENT_MANIFEST: AutopilotAgentManifest = {
     fallbackTarget: 'builtin-knowledge',
   },
   designer: {
-    id: 'autopilot-designer',
+    id: 'superpowers-designer',
     role: 'designer',
     roleFamily: 'design',
     agentKind: 'delegated-specialist',
@@ -72,7 +72,7 @@ export const AUTOPILOT_AGENT_MANIFEST: AutopilotAgentManifest = {
     fallbackTarget: 'builtin-designer',
   },
   reviewer: {
-    id: 'autopilot-reviewer',
+    id: 'superpowers-reviewer',
     role: 'reviewer',
     roleFamily: 'review',
     agentKind: 'delegated-specialist',
@@ -84,7 +84,7 @@ export const AUTOPILOT_AGENT_MANIFEST: AutopilotAgentManifest = {
 };
 
 export const AUTOPILOT_AGENT_IDS = [
-  AUTOPILOT_AGENT_MANIFEST.orchestrator.id,
+  AUTOPILOT_AGENT_MANIFEST.superpowers.id,
   AUTOPILOT_AGENT_MANIFEST.explorer.id,
   AUTOPILOT_AGENT_MANIFEST.implementer.id,
   AUTOPILOT_AGENT_MANIFEST.knowledge.id,

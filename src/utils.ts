@@ -1,4 +1,8 @@
-import type { CommandTextPart } from './types';
+import type {
+  CommandTextPart,
+  ParsedPlanDocument,
+  ParsedPlanTask,
+} from './types';
 
 const QUESTION_PATTERNS: RegExp[] = [
   /\bwould you like\b/,
@@ -46,7 +50,7 @@ export function buildCountdownNotification(
   ].join('\n');
 }
 
-export function buildOrchestratorStartupGuidance(options: {
+export function buildSuperpowersStartupGuidance(options: {
   task: string;
   maxLoops: number;
   executeStopLine: string;
@@ -59,8 +63,8 @@ export function buildOrchestratorStartupGuidance(options: {
     `Autopilot enabled: ${options.task}`,
     `Max loops: ${options.maxLoops}`,
     '',
-    'You are the orchestrator for a superpowers-governed workflow.',
-    'Superpowers is the policy layer. You are responsible for routing, delegation, and stop gates.',
+    'You are Superpowers, the primary agent for this autopilot workflow.',
+    'You are responsible for routing, delegation, and stop gates.',
     'Prefer slim-style specialists before built-in fallbacks.',
     'Do not default to inline implementation when delegation is available.',
     '1. Design (brainstorming) - auto-approve if unambiguous',
@@ -83,18 +87,28 @@ export function buildOrchestratorStartupGuidance(options: {
   ].join('\n');
 }
 
-export function buildOrchestratorContinuationGuidance(options: {
+export function buildSuperpowersContinuationGuidance(options: {
   task: string;
   loopNumber: number;
   maxLoops: number;
   assessmentMessage: string;
   lastRecommendation: string | null;
+  activeTaskVerification?: string[];
+  currentPhase?: string;
 }): string {
   return [
     `[Autopilot loop ${options.loopNumber}/${options.maxLoops}]`,
     `Task: ${options.task}`,
-    'Continue as orchestrator.',
-    'Check whether the next step should be delegated before doing work inline.',
+    'Continue as Superpowers.',
+    ...(options.currentPhase === 'verify'
+      ? ['Verification phase: confirm the active task satisfies its verification steps before advancing.']
+      : ['Check whether the next step should be delegated before doing work inline.']),
+    ...(options.activeTaskVerification && options.activeTaskVerification.length > 0
+      ? [
+          'Active task verification:',
+          ...options.activeTaskVerification.map((item) => `- ${item}`),
+        ]
+      : []),
     ...(options.lastRecommendation
       ? [`Recommended next step: ${options.lastRecommendation}`]
       : []),
@@ -110,7 +124,7 @@ export function readSuperpowersTask(projectDir: string): {
   try {
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
-    const baseDir = path.join(projectDir, 'docs', 'superpowers-optimized');
+    const baseDir = path.join(projectDir, 'docs', 'superpowers');
 
     if (!fs.existsSync(baseDir)) {
       return { specs: [], plans: [], hasSuperpowers: false };
@@ -137,6 +151,148 @@ export function readSuperpowersTask(projectDir: string): {
   } catch {
     return { specs: [], plans: [], hasSuperpowers: false };
   }
+}
+
+export function readSuperpowersArtifacts(projectDir: string): {
+  hasSuperpowers: boolean;
+  specPaths: string[];
+  planPaths: string[];
+  planDocuments: ParsedPlanDocument[];
+} {
+  try {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const baseDir = path.join(projectDir, 'docs', 'superpowers');
+
+    if (!fs.existsSync(baseDir)) {
+      return {
+        hasSuperpowers: false,
+        specPaths: [],
+        planPaths: [],
+        planDocuments: [],
+      };
+    }
+
+    const specsDir = path.join(baseDir, 'specs');
+    const plansDir = path.join(baseDir, 'plans');
+
+    const readMarkdownPaths = (dir: string): string[] => {
+      if (!fs.existsSync(dir)) return [];
+      return fs
+        .readdirSync(dir)
+        .filter((f: string) => f.endsWith('.md'))
+        .sort()
+        .map((f: string) => path.join(dir, f));
+    };
+
+    const specPaths = readMarkdownPaths(specsDir);
+    const planPaths = readMarkdownPaths(plansDir);
+    const planDocuments = planPaths.map((planPath) =>
+      parsePlanMarkdown(fs.readFileSync(planPath, 'utf-8'), planPath),
+    );
+
+    return {
+      hasSuperpowers: true,
+      specPaths,
+      planPaths,
+      planDocuments,
+    };
+  } catch {
+    return {
+      hasSuperpowers: false,
+      specPaths: [],
+      planPaths: [],
+      planDocuments: [],
+    };
+  }
+}
+
+export function parsePlanMarkdown(
+  markdown: string,
+  path = 'docs/superpowers/plans/unknown.md',
+): ParsedPlanDocument {
+  const lines = markdown.split(/\r?\n/);
+  const titleMatch = markdown.match(/^#\s+(.+)$/m);
+  const tasks: ParsedPlanTask[] = [];
+  let currentTask: ParsedPlanTask | null = null;
+  let currentBodyLines: string[] = [];
+  let currentVerification: string[] = [];
+  let inVerificationSection = false;
+  let taskCounter = 0;
+
+  const flushTask = (): void => {
+    if (!currentTask) {
+      return;
+    }
+
+    currentTask.body = currentBodyLines.join('\n').trim();
+    currentTask.verification = [...currentVerification];
+    tasks.push(currentTask);
+    currentTask = null;
+    currentBodyLines = [];
+    currentVerification = [];
+    inVerificationSection = false;
+  };
+
+  for (const line of lines) {
+    const checklistMatch = line.match(/^[-*]\s+\[( |x)\]\s+(.+)$/i);
+    if (checklistMatch) {
+      flushTask();
+      taskCounter += 1;
+      currentTask = {
+        id: `task-${taskCounter}`,
+        title: checklistMatch[2].trim(),
+        body: '',
+        verification: [],
+        status:
+          checklistMatch[1].toLowerCase() === 'x' ? 'completed' : 'pending',
+      };
+      continue;
+    }
+
+    const headingMatch = line.match(/^###\s+Task\s+\d+\s*:\s*(.+)$/i);
+    if (headingMatch) {
+      flushTask();
+      taskCounter += 1;
+      currentTask = {
+        id: `task-${taskCounter}`,
+        title: headingMatch[1].trim(),
+        body: '',
+        verification: [],
+        status: 'pending',
+      };
+      continue;
+    }
+
+    if (!currentTask) {
+      continue;
+    }
+
+    if (/^###\s+Verification/i.test(line) || /^\*\*Verification\*\*/i.test(line)) {
+      inVerificationSection = true;
+      continue;
+    }
+
+    if (/^###\s+/.test(line) && !/^###\s+Verification/i.test(line)) {
+      inVerificationSection = false;
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+(.+)$/);
+    if (inVerificationSection && bulletMatch) {
+      currentVerification.push(bulletMatch[1].trim());
+      continue;
+    }
+
+    currentBodyLines.push(line);
+  }
+
+  flushTask();
+
+  return {
+    path,
+    title: titleMatch ? titleMatch[1].trim() : null,
+    tasks,
+  };
 }
 
 export function buildTaskContextFromSuperpowers(projectDir: string): string | null {
@@ -166,6 +322,17 @@ export function parseAutopilotCommand(args: string): {
   if (trimmed === 'off') return { action: 'off' };
   if (trimmed === 'status') return { action: 'status' };
   if (trimmed === 'resume') return { action: 'resume' };
+
+  const resumeLoopsMatch = trimmed.match(/^resume\s+--loops\s+(\d+)$/);
+  if (resumeLoopsMatch) {
+    const maxLoops = parseInt(resumeLoopsMatch[1], 10);
+
+    if (maxLoops <= 0) {
+      return { action: 'resume', error: 'maxLoops must be positive' };
+    }
+
+    return { action: 'resume', maxLoops };
+  }
 
   const loopsMatch = trimmed.match(/^--loops\s+(\d+)\s+"([\s\S]+)"$/);
   if (loopsMatch) {
@@ -200,6 +367,16 @@ export function createInternalPrompt(text: string): CommandTextPart {
 export function formatStatus(state: {
   enabled: boolean;
   task: string;
+  activePlanPath?: string | null;
+  activeTaskTitle?: string | null;
+  activeTaskStatus?: 'pending' | 'in_progress' | 'completed' | null;
+  activeTaskVerificationRequired?: boolean | null;
+  idleReason?: string | null;
+  verifyOutcome?: 'pending' | 'failed' | 'passed' | 'issue' | null;
+  lastVerifyIssueName?: string | null;
+  planTaskCounts?: { completed: number; pending: number } | null;
+  lastVerifiedTaskTitle?: string | null;
+  lastCompletedTaskTitle?: string | null;
   currentLoop: number;
   maxLoops: number;
   currentPhase: string;
@@ -212,6 +389,22 @@ export function formatStatus(state: {
   return [
     'Autopilot: enabled',
     `Task: ${state.task}`,
+    ...(state.activeTaskTitle ? [`Current task: ${state.activeTaskTitle}`] : []),
+    ...(state.activeTaskStatus ? [`Task status: ${state.activeTaskStatus}`] : []),
+    ...(state.activeTaskTitle && state.activeTaskVerificationRequired !== null && state.activeTaskVerificationRequired !== undefined
+      ? [`Verification required: ${state.activeTaskVerificationRequired ? 'yes' : 'no'}`]
+      : []),
+    ...(state.idleReason ? [`Idle reason: ${state.idleReason}`] : []),
+    ...(state.verifyOutcome ? [`Verification outcome: ${state.verifyOutcome}`] : []),
+    ...(state.lastVerifyIssueName ? [`Last verify issue: ${state.lastVerifyIssueName}`] : []),
+    ...(state.planTaskCounts
+      ? [
+          `Plan progress: ${state.planTaskCounts.completed} completed, ${state.planTaskCounts.pending} pending`,
+        ]
+      : []),
+    ...(state.lastVerifiedTaskTitle ? [`Last verified task: ${state.lastVerifiedTaskTitle}`] : []),
+    ...(state.lastCompletedTaskTitle ? [`Last completed task: ${state.lastCompletedTaskTitle}`] : []),
+    ...(state.activePlanPath ? [`Plan: ${state.activePlanPath}`] : []),
     `Progress: ${state.currentLoop}/${state.maxLoops} loops`,
     `Phase: ${state.currentPhase} (${state.phaseLoopCount} loops in phase)`,
   ].join('\n');

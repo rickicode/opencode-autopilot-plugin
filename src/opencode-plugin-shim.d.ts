@@ -49,11 +49,21 @@ declare module '@opencode-ai/plugin' {
     permission?: Record<string, unknown>;
   }
 
+  export interface CommandConfig {
+    template: string;
+    description?: string;
+    agent?: string;
+    model?: string;
+    subtask?: boolean;
+    hints?: string[];
+  }
+
   export type Plugin = (
     ctx: PluginInput,
   ) => Promise<{
     name: string;
     agent?: Record<string, AgentConfig>;
+    command?: Record<string, CommandConfig>;
     tool?: Record<string, unknown>;
     config?: (opencodeConfig: Record<string, unknown>) => Promise<void>;
     'command.execute.before'?: (

@@ -3,36 +3,40 @@ import { copyFileSync, existsSync } from 'node:fs';
 export const SUPERPOWERS_PLUGIN =
   'superpowers@git+https://github.com/obra/superpowers.git';
 
+export function getLocalAutopilotPluginEntry(baseDir: string = process.cwd()): string {
+  return baseDir;
+}
+
 const MANAGED_AGENT_DEFINITIONS = {
-  'autopilot-orchestrator': {
-    description: 'Autopilot managed orchestrator agent',
+  superpowers: {
+    description: 'Autopilot managed Superpowers primary agent',
     metadata: { owner: 'autopilot' },
     mode: 'primary',
   },
-  'autopilot-explorer': {
+  'superpowers-explorer': {
     description: 'Autopilot managed explorer agent',
     metadata: { owner: 'autopilot' },
-    mode: 'delegated',
+    mode: 'subagent',
   },
-  'autopilot-implementer': {
+  'superpowers-implementer': {
     description: 'Autopilot managed implementer agent',
     metadata: { owner: 'autopilot' },
-    mode: 'delegated',
+    mode: 'subagent',
   },
-  'autopilot-knowledge': {
+  'superpowers-knowledge': {
     description: 'Autopilot managed knowledge agent',
     metadata: { owner: 'autopilot' },
-    mode: 'delegated',
+    mode: 'subagent',
   },
-  'autopilot-designer': {
+  'superpowers-designer': {
     description: 'Autopilot managed designer agent',
     metadata: { owner: 'autopilot' },
-    mode: 'delegated',
+    mode: 'subagent',
   },
-  'autopilot-reviewer': {
+  'superpowers-reviewer': {
     description: 'Autopilot managed reviewer agent',
     metadata: { owner: 'autopilot' },
-    mode: 'delegated',
+    mode: 'subagent',
   },
 } as const;
 
@@ -41,6 +45,20 @@ type ManagedAutopilotAgentID = keyof typeof MANAGED_AGENT_DEFINITIONS;
 export const MANAGED_AUTOPILOT_AGENT_KEYS = Object.keys(
   MANAGED_AGENT_DEFINITIONS,
 ) as ManagedAutopilotAgentID[];
+
+const LEGACY_AGENT_ID_MIGRATIONS = {
+  'autopilot-superpowers': 'superpowers',
+  'autopilot-explorer': 'superpowers-explorer',
+  'autopilot-implementer': 'superpowers-implementer',
+  'autopilot-knowledge': 'superpowers-knowledge',
+  'autopilot-designer': 'superpowers-designer',
+  'autopilot-reviewer': 'superpowers-reviewer',
+} as const;
+
+type LegacyAutopilotAgentID = keyof typeof LEGACY_AGENT_ID_MIGRATIONS;
+const LEGACY_AUTOPILOT_AGENT_KEYS = Object.keys(
+  LEGACY_AGENT_ID_MIGRATIONS,
+) as LegacyAutopilotAgentID[];
 
 function cloneConfig<T>(value: T): T {
   return JSON.parse(JSON.stringify(value ?? {})) as T;
@@ -93,7 +111,10 @@ export function backupConfigFile(configPath: string): string {
   return backupPath;
 }
 
-export function mergeOpenCodeConfig(existing: Record<string, any>): {
+export function mergeOpenCodeConfig(
+  existing: Record<string, any>,
+  localAutopilotPlugin: string = getLocalAutopilotPluginEntry(),
+): {
   config: Record<string, any>;
   conflicts: string[];
 } {
@@ -101,11 +122,14 @@ export function mergeOpenCodeConfig(existing: Record<string, any>): {
   const conflicts: string[] = [];
 
   if (config.plugin === undefined) {
-    config.plugin = [SUPERPOWERS_PLUGIN];
+    config.plugin = [SUPERPOWERS_PLUGIN, localAutopilotPlugin];
   } else if (Array.isArray(config.plugin)) {
     const plugin = [...config.plugin];
     if (!plugin.includes(SUPERPOWERS_PLUGIN)) {
       plugin.push(SUPERPOWERS_PLUGIN);
+    }
+    if (!plugin.includes(localAutopilotPlugin)) {
+      plugin.push(localAutopilotPlugin);
     }
     config.plugin = plugin;
   } else {
@@ -116,6 +140,21 @@ export function mergeOpenCodeConfig(existing: Record<string, any>): {
     conflicts.push('agent');
   } else {
     const agent = isObjectRecord(config.agent) ? { ...config.agent } : {};
+
+    for (const legacyAgentID of LEGACY_AUTOPILOT_AGENT_KEYS) {
+      const canonicalAgentID = LEGACY_AGENT_ID_MIGRATIONS[legacyAgentID];
+      const legacyAgent = agent[legacyAgentID];
+
+      if (legacyAgent === undefined || !isAutopilotOwnedAgent(legacyAgent)) {
+        continue;
+      }
+
+      if (agent[canonicalAgentID] === undefined) {
+        agent[canonicalAgentID] = legacyAgent;
+      }
+
+      delete agent[legacyAgentID];
+    }
 
     for (const agentID of MANAGED_AUTOPILOT_AGENT_KEYS) {
       const managedDefinition = cloneConfig(MANAGED_AGENT_DEFINITIONS[agentID]);
@@ -139,8 +178,10 @@ export function mergeOpenCodeConfig(existing: Record<string, any>): {
     config.agent = agent;
   }
 
-  const desiredDefaultAgent = 'autopilot-orchestrator';
+  const desiredDefaultAgent = 'superpowers';
   if (config.default_agent === undefined) {
+    config.default_agent = desiredDefaultAgent;
+  } else if (config.default_agent === 'autopilot-superpowers') {
     config.default_agent = desiredDefaultAgent;
   } else if (config.default_agent !== desiredDefaultAgent) {
     conflicts.push('default_agent');

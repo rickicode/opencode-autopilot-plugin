@@ -10,11 +10,25 @@ import type {
   ReadinessResult,
 } from './types';
 
-const EXECUTION_ARTIFACT_PATTERN =
-  /(^|\/)(docs\/superpowers-optimized\/(specs|plans))(\/|$)/;
+const APPROVED_ARTIFACT_PATTERN = /-approved\.md$/;
 
 const DESIGN_DOC_TERM_PATTERN = /\b(design\s*doc|spec)\b/i;
 const DESIGN_DOC_ACTION_VERB_PATTERN = /\b(edit|editing|review|reviewing)\b/i;
+
+function hasApprovedExecutionArtifacts(artifactPaths: string[]): boolean {
+  const hasSpec = artifactPaths.some(
+    (artifactPath) =>
+      /(^|\/)(docs\/superpowers\/specs)(\/|$)/.test(artifactPath)
+      && APPROVED_ARTIFACT_PATTERN.test(artifactPath),
+  );
+  const hasPlan = artifactPaths.some(
+    (artifactPath) =>
+      /(^|\/)(docs\/superpowers\/plans)(\/|$)/.test(artifactPath)
+      && APPROVED_ARTIFACT_PATTERN.test(artifactPath),
+  );
+
+  return hasSpec && hasPlan;
+}
 
 function resolveCanonicalAgentAvailability(availableAgents: string[]): string[] {
   const detectedAgents = new Set(availableAgents);
@@ -47,6 +61,10 @@ export function evaluateReadiness(
   const availableAgents = resolveCanonicalAgentAvailability(input.availableAgents);
   const autopilotInstalled =
     input.autopilotInstalled && availableAgents.length === AUTOPILOT_AGENT_IDS.length;
+  const installReady =
+    input.configReadable && input.superpowersDeclared && autopilotInstalled;
+  const executionReady =
+    installReady && hasApprovedExecutionArtifacts(input.artifactPaths ?? []);
   const missing: ReadinessResult['missing'] = [];
 
   if (!input.configReadable) {
@@ -65,8 +83,10 @@ export function evaluateReadiness(
     configReadable: input.configReadable,
     superpowersDeclared: input.superpowersDeclared,
     autopilotInstalled,
+    installReady,
+    executionReady,
     availableAgents,
-    ready: missing.length === 0,
+    ready: installReady,
     missing,
   };
 }
@@ -74,23 +94,17 @@ export function evaluateReadiness(
 export function detectAutopilotExecutionTrigger(
   input: ExecutionTriggerInput,
 ): ExecutionTriggerResult {
-  if (input.classification === 'FULL') {
-    return input.approvalPending
-      ? { shouldAutoStart: false, reason: 'approval-pending' }
-      : { shouldAutoStart: true, reason: 'full-execution' };
+  if (!hasApprovedExecutionArtifacts(input.artifactPaths)) {
+    return { shouldAutoStart: false, reason: 'no-trigger' };
   }
 
-  const hasExecutionArtifact = input.artifactPaths.some((artifactPath) =>
-    EXECUTION_ARTIFACT_PATTERN.test(artifactPath),
-  );
-
-  if (hasExecutionArtifact) {
-    if (isDesignDocAction(input.currentAction)) {
-      return { shouldAutoStart: false, reason: 'design-doc-action' };
-    }
-
-    return { shouldAutoStart: true, reason: 'artifact-execution' };
+  if (input.approvalPending) {
+    return { shouldAutoStart: false, reason: 'approval-pending' };
   }
 
-  return { shouldAutoStart: false, reason: 'no-trigger' };
+  if (isDesignDocAction(input.currentAction)) {
+    return { shouldAutoStart: false, reason: 'design-doc-action' };
+  }
+
+  return { shouldAutoStart: true, reason: 'artifact-execution' };
 }

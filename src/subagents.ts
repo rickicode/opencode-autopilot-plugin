@@ -2,19 +2,25 @@ import type { AgentConfig } from '@opencode-ai/plugin';
 
 export type SubagentName =
   | 'explorer'
-  | 'librarian'
-  | 'oracle'
+  | 'knowledge'
   | 'designer'
-  | 'fixer'
-  | 'observer';
+  | 'implementer'
+  | 'reviewer';
+
+export const SUBAGENT_RUNTIME_IDS = {
+  explorer: 'superpowers-explorer',
+  knowledge: 'superpowers-knowledge',
+  designer: 'superpowers-designer',
+  implementer: 'superpowers-implementer',
+  reviewer: 'superpowers-reviewer',
+} as const;
 
 export const SUBAGENT_NAMES: readonly SubagentName[] = [
   'explorer',
-  'librarian',
-  'oracle',
+  'knowledge',
   'designer',
-  'fixer',
-  'observer',
+  'implementer',
+  'reviewer',
 ] as const;
 
 const EXPLORER_PROMPT = `You are Explorer - a fast codebase navigation specialist.
@@ -47,7 +53,7 @@ Concise answer to the question
 - Include line numbers when relevant
 `;
 
-const LIBRARIAN_PROMPT = `You are Librarian - a research specialist for codebases and documentation.
+const KNOWLEDGE_PROMPT = `You are Knowledge - a research specialist for codebases and documentation.
 
 **Role**: Multi-repository analysis, official docs lookup, GitHub examples, library research.
 
@@ -69,7 +75,7 @@ const LIBRARIAN_PROMPT = `You are Librarian - a research specialist for codebase
 - Distinguish between official and community patterns
 `;
 
-const ORACLE_PROMPT = `You are Oracle - a strategic technical advisor and code reviewer.
+const REVIEWER_PROMPT = `You are Reviewer - a strategic technical advisor and code reviewer.
 
 **Role**: High-IQ debugging, architecture decisions, code review, simplification, and engineering guidance.
 
@@ -129,12 +135,12 @@ const DESIGNER_PROMPT = `You are a Designer - a frontend UI/UX specialist who cr
 - Prioritize visual excellence
 `;
 
-const FIXER_PROMPT = `You are Fixer - a fast, focused implementation specialist.
+const IMPLEMENTER_PROMPT = `You are Implementer - a fast, focused implementation specialist.
 
-**Role**: Execute code changes efficiently. You receive complete context from research agents and clear task specifications from the Orchestrator. Your job is to implement, not plan or research.
+**Role**: Execute code changes efficiently. You receive complete context from research agents and clear task specifications from Superpowers. Your job is to implement, not plan or research.
 
 **Behavior**:
-- Execute the task specification provided by the Orchestrator
+- Execute the task specification provided by Superpowers
 - Use the research context (file paths, documentation, patterns) provided
 - Read files before using edit/write tools and gather exact content before making changes
 - Be fast and direct — no research, no delegation
@@ -162,25 +168,6 @@ Brief summary of what was implemented
 </verification>
 `;
 
-const OBSERVER_PROMPT = `You are Observer — a visual analysis specialist.
-
-**Role**: Interpret images, screenshots, PDFs, and diagrams. Extract structured observations for the Orchestrator to act on.
-
-**Behavior**:
-- Read the file(s) specified in the prompt
-- Analyze visual content — layouts, UI elements, text, relationships, flows
-- For screenshots with text/code/errors: extract the exact text via OCR — never paraphrase
-- For multiple files: analyze each, then compare or relate as requested
-- Return ONLY the extracted information relevant to the goal
-- If the image is unclear: state what you CAN see and note what is uncertain
-
-**Constraints**:
-- READ-ONLY: Analyze and report, don't modify files
-- Save context tokens — the Orchestrator never processes the raw file
-- Match the language of the request
-- If info not found, state clearly what's missing
-`;
-
 export interface SubagentDefinition {
   name: SubagentName;
   description: string;
@@ -198,23 +185,23 @@ const SUBAGENT_DEFINITIONS: Record<SubagentName, SubagentDefinition> = {
       mode: 'subagent',
     },
   },
-  librarian: {
-    name: 'librarian',
+  knowledge: {
+    name: 'knowledge',
     description:
       'External documentation and library research. Use for official docs lookup, GitHub examples, and understanding library internals.',
     config: {
       temperature: 0.1,
-      prompt: LIBRARIAN_PROMPT,
+      prompt: KNOWLEDGE_PROMPT,
       mode: 'subagent',
     },
   },
-  oracle: {
-    name: 'oracle',
+  reviewer: {
+    name: 'reviewer',
     description:
       'Strategic technical advisor. Use for architecture decisions, complex debugging, code review, and simplification.',
     config: {
       temperature: 0.2,
-      prompt: ORACLE_PROMPT,
+      prompt: REVIEWER_PROMPT,
       mode: 'subagent',
     },
   },
@@ -228,29 +215,19 @@ const SUBAGENT_DEFINITIONS: Record<SubagentName, SubagentDefinition> = {
       mode: 'subagent',
     },
   },
-  fixer: {
-    name: 'fixer',
+  implementer: {
+    name: 'implementer',
     description:
       'Fast implementation specialist. Receives complete context and task spec, executes code changes efficiently.',
     config: {
       temperature: 0.2,
-      prompt: FIXER_PROMPT,
-      mode: 'subagent',
-    },
-  },
-  observer: {
-    name: 'observer',
-    description:
-      'Visual analysis. Use for interpreting images, screenshots, PDFs, and diagrams.',
-    config: {
-      temperature: 0.1,
-      prompt: OBSERVER_PROMPT,
+      prompt: IMPLEMENTER_PROMPT,
       mode: 'subagent',
     },
   },
 };
 
-const ORCHESTRATOR_DELEGATION_GUIDE = `
+const SUPERPOWERS_DELEGATION_GUIDE = `
 ## Specialist Agents
 
 You have these specialist agents available for delegation:
@@ -262,14 +239,14 @@ You have these specialist agents available for delegation:
 - **Delegate when:** Need to discover what exists before planning, parallel searches, need summarized map, broad/uncertain scope
 - **Don't delegate when:** Know the path and need actual content, need full file anyway, single specific lookup
 
-@librarian
+@knowledge
 - Role: Authoritative source for current library docs and API references
 - Permissions: None
 - Stats: 10x better finding up-to-date library docs, 1/2 cost
 - **Delegate when:** Libraries with frequent API changes, complex APIs needing official examples, version-specific behavior, unfamiliar library
 - **Don't delegate when:** Standard usage you're confident about, simple stable APIs, general programming knowledge
 
-@oracle
+@reviewer
 - Role: Strategic advisor for high-stakes decisions and persistent problems, code reviewer
 - Permissions: Read files
 - Stats: 5x better decision maker, problem solver, investigator
@@ -283,36 +260,30 @@ You have these specialist agents available for delegation:
 - **Delegate when:** User-facing interfaces needing polish, responsive layouts, UX-critical components, visual consistency
 - **Don't delegate when:** Backend/logic with no visual, quick prototypes where design doesn't matter yet
 
-@fixer
+@implementer
 - Role: Fast execution specialist for well-defined tasks, parallel speedy executions
 - Permissions: Read/write files
 - Stats: 2x faster code edits, 1/2 cost, 0.8x quality
 - **Delegate when:** Well-scoped changes with clear context, parallel independent edits, routine modifications, test updates
 - **Don't delegate when:** Complex logic requiring careful reasoning, tasks needing research first, ambiguous requirements
 
-@observer
-- Role: Visual analysis specialist
-- Permissions: Read files
-- **Delegate when:** Need to interpret images, screenshots, PDFs, or diagrams
-- **Don't delegate when:** Text-only analysis, no visual content involved
-
 ## Delegation Rules
-- Orchestrator can delegate to ALL subagents
-- Fixer is a leaf node — no delegation allowed
-- Explorer, librarian, oracle, observer are read-only leaf nodes
-- Designer can use explorer for research during design
+- Superpowers can delegate to ALL subagents
+- Implementer is a leaf node — no delegation allowed
+- Explorer, knowledge, reviewer are read-only leaf nodes
+- Designer can use explorer or knowledge for research during design
 - Prefer delegation for speed and cost efficiency
 - Use parallel delegation when tasks are independent
 `;
 
-export function getOrchestratorDelegationGuide(): string {
-  return ORCHESTRATOR_DELEGATION_GUIDE;
+export function getSuperpowersDelegationGuide(): string {
+  return SUPERPOWERS_DELEGATION_GUIDE;
 }
 
 export function buildSubagentConfigs(): Record<string, AgentConfig> {
   const configs: Record<string, AgentConfig> = {};
   for (const def of Object.values(SUBAGENT_DEFINITIONS)) {
-    configs[def.name] = {
+    configs[SUBAGENT_RUNTIME_IDS[def.name]] = {
       ...def.config,
       description: def.description,
     };
@@ -320,11 +291,11 @@ export function buildSubagentConfigs(): Record<string, AgentConfig> {
   return configs;
 }
 
-export function buildOrchestratorConfig(): AgentConfig {
+export function buildSuperpowersConfig(): AgentConfig {
   return {
     temperature: 0.1,
     mode: 'primary',
     description:
-      'AI coding orchestrator that delegates tasks to specialist agents for optimal quality, speed, and cost',
+      'Superpowers primary agent that delegates tasks to specialist agents for optimal quality, speed, and cost',
   };
 }

@@ -2,6 +2,7 @@ import {
   createInternalPrompt,
   formatStatus,
   parseAutopilotCommand,
+  parsePlanMarkdown,
   isQuestion,
   countIncompleteTodos,
   buildCountdownNotification,
@@ -43,6 +44,11 @@ assertEqual(
   { action: 'resume' },
   'parses resume command',
 );
+assertEqual(
+  parseAutopilotCommand('resume --loops 8'),
+  { action: 'resume', maxLoops: 8 },
+  'parses resume command with loop override',
+);
 
 const invalidMaxLoops = parseAutopilotCommand('--loops 0 "task"');
 if (!invalidMaxLoops.error) {
@@ -77,6 +83,15 @@ assertEqual(
   formatStatus({
     enabled: true,
     task: 'add auth',
+    activeTaskTitle: 'Implement login flow',
+    activeTaskStatus: 'in_progress',
+    activeTaskVerificationRequired: true,
+    idleReason: 'verify_issue',
+    verifyOutcome: 'issue',
+    lastVerifyIssueName: 'ToolUnavailableError',
+    planTaskCounts: { completed: 1, pending: 2 },
+    lastVerifiedTaskTitle: 'Prepare fixtures',
+    lastCompletedTaskTitle: 'Prepare fixtures',
     currentLoop: 2,
     maxLoops: 5,
     currentPhase: 'plan',
@@ -85,6 +100,15 @@ assertEqual(
   [
     'Autopilot: enabled',
     'Task: add auth',
+    'Current task: Implement login flow',
+    'Task status: in_progress',
+    'Verification required: yes',
+    'Idle reason: verify_issue',
+    'Verification outcome: issue',
+    'Last verify issue: ToolUnavailableError',
+    'Plan progress: 1 completed, 2 pending',
+    'Last verified task: Prepare fixtures',
+    'Last completed task: Prepare fixtures',
     'Progress: 2/5 loops',
     'Phase: plan (1 loops in phase)',
   ].join('\n'),
@@ -161,8 +185,8 @@ assertEqual(noSpResult.specs.length, 0, 'returns empty specs when dir missing');
 assertEqual(noSpResult.plans.length, 0, 'returns empty plans when dir missing');
 
 const spDir = mkdtempSync(join(tmpdir(), 'autopilot-sp-'));
-const specsDir = join(spDir, 'docs', 'superpowers-optimized', 'specs');
-const plansDir = join(spDir, 'docs', 'superpowers-optimized', 'plans');
+const specsDir = join(spDir, 'docs', 'superpowers', 'specs');
+const plansDir = join(spDir, 'docs', 'superpowers', 'plans');
 mkdirSync(specsDir, { recursive: true });
 mkdirSync(plansDir, { recursive: true });
 writeFileSync(join(specsDir, 'auth.md'), '# Auth Spec\nJWT auth flow');
@@ -184,3 +208,41 @@ assert(context !== null, 'returns context when superpowers exists');
 assert(context!.includes('Superpowers Context'), 'context includes header');
 assert(context!.includes('Auth Spec'), 'context includes spec content');
 assert(context!.includes('Auth Plan'), 'context includes plan content');
+
+const checklistPlan = parsePlanMarkdown(`# Sample Plan
+
+- [ ] Add readiness split
+Implementation notes here.
+
+### Verification
+- npm test
+
+- [x] Update docs
+Docs notes.
+`);
+
+assertEqual(checklistPlan.title, 'Sample Plan', 'parses markdown plan title');
+assertEqual(checklistPlan.tasks.length, 2, 'parses checklist tasks');
+assertEqual(checklistPlan.tasks[0].id, 'task-1', 'assigns sequential task ids');
+assertEqual(checklistPlan.tasks[0].title, 'Add readiness split', 'parses checklist title');
+assertEqual(checklistPlan.tasks[0].status, 'pending', 'unchecked checklist task is pending');
+assert(
+  checklistPlan.tasks[0].body.includes('Implementation notes here.'),
+  'preserves checklist task body',
+);
+assertEqual(checklistPlan.tasks[0].verification, ['npm test'], 'collects verification bullets');
+assertEqual(checklistPlan.tasks[1].status, 'completed', 'checked checklist task is completed');
+
+const headingPlan = parsePlanMarkdown(`### Task 1: Add parser
+Use a minimal parser.
+
+### Verification
+- node --test
+
+### Task 2: Wire state
+Track active task.
+`);
+
+assertEqual(headingPlan.tasks.length, 2, 'parses heading-based tasks');
+assertEqual(headingPlan.tasks[0].title, 'Add parser', 'parses heading task title');
+assertEqual(headingPlan.tasks[0].verification, ['node --test'], 'captures heading verification');

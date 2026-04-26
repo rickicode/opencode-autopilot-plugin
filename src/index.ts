@@ -1,7 +1,12 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { createAutopilotHook } from './autopilot-hook';
 import type { AutopilotConfig, AutopilotHook, CommandOutput } from './types';
-import { buildSubagentConfigs, buildOrchestratorConfig } from './subagents';
+import { buildSubagentConfigs, buildSuperpowersConfig } from './subagents';
+
+const AUTOPILOT_COMMAND = {
+  template: 'Call the autopilot tool with raw=$ARGUMENTS',
+  description: 'Run the /autopilot slash command for autonomous task execution',
+};
 
 const AutopilotPlugin: Plugin = async (ctx) => {
   const userConfig = (ctx.config?.autopilot ?? {}) as Partial<AutopilotConfig>;
@@ -11,14 +16,17 @@ const AutopilotPlugin: Plugin = async (ctx) => {
   const { tool } = await import('@opencode-ai/plugin/tool');
 
   // Create autopilot tool
+  const stringSchema = tool.schema.string() as { optional: () => unknown };
+  const numberSchema = tool.schema.number() as { optional: () => unknown };
   const autopilotTool = tool({
     description: 'Enable autonomous multi-step execution using superpowers workflow',
     args: {
-      task: tool.schema.string(),
-      maxLoops: tool.schema.number().optional(),
+      task: stringSchema.optional(),
+      raw: stringSchema.optional(),
+      maxLoops: numberSchema.optional(),
     },
     execute: async (args: Record<string, unknown>) => {
-      const typedArgs = args as { task: string; maxLoops?: number };
+      const typedArgs = args as { task?: string; raw?: string; maxLoops?: number };
       // Get current session ID from context
       const sessionID = (ctx as { sessionID?: string }).sessionID;
       if (!sessionID) {
@@ -35,7 +43,12 @@ const AutopilotPlugin: Plugin = async (ctx) => {
       // Call hook handler directly with structured tool args
       const output: CommandOutput = { parts: [] };
       await hook.handleToolExecute(
-        { sessionID, task: typedArgs.task, maxLoops: typedArgs.maxLoops },
+        {
+          sessionID,
+          task: typedArgs.task,
+          raw: typedArgs.raw,
+          maxLoops: typedArgs.maxLoops,
+        },
         output,
       );
       
@@ -49,9 +62,9 @@ const AutopilotPlugin: Plugin = async (ctx) => {
   });
 
   const subagentConfigs = buildSubagentConfigs();
-  const orchestratorConfig = buildOrchestratorConfig();
+  const superpowersConfig = buildSuperpowersConfig();
   const agents = {
-    orchestrator: orchestratorConfig,
+    superpowers: superpowersConfig,
     ...subagentConfigs,
   };
 
@@ -60,17 +73,21 @@ const AutopilotPlugin: Plugin = async (ctx) => {
 
     agent: agents,
 
+    command: {
+      autopilot: AUTOPILOT_COMMAND,
+    },
+
     tool: {
       autopilot: autopilotTool,
     },
 
     config: async (opencodeConfig: Record<string, unknown>) => {
-      // Set orchestrator as default agent
+      // Set superpowers as default agent
       if (
         !(opencodeConfig as { default_agent?: string }).default_agent
       ) {
         (opencodeConfig as { default_agent?: string }).default_agent =
-          'orchestrator';
+          'superpowers';
       }
 
       // Merge agent configs — per-agent shallow merge to preserve
@@ -108,7 +125,7 @@ const AutopilotPlugin: Plugin = async (ctx) => {
 
       commandRegistry.autopilot = {
         ...existingAutopilotCommand,
-        description: 'Run the /autopilot slash command for autonomous task execution',
+        ...AUTOPILOT_COMMAND,
       };
 
       opencodeConfig.command = commandRegistry;
@@ -141,3 +158,8 @@ const AutopilotPlugin: Plugin = async (ctx) => {
 };
 
 export default AutopilotPlugin;
+
+// OpenCode local plugin loading may use CommonJS require() against the built
+// package directory, so expose the plugin function on module.exports too.
+module.exports = AutopilotPlugin;
+module.exports.default = AutopilotPlugin;

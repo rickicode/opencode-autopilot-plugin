@@ -20,6 +20,7 @@ async function run(): Promise<void> {
   function createPromptCollector(options?: {
     todos?: Array<{ id: string; content: string; status: string; priority: string }>;
     messages?: Array<{ info?: { role?: string }; parts?: Array<{ type?: string; text?: string }> }>;
+    directory?: string;
   }): {
     prompts: Array<{
       path: { id: string };
@@ -33,6 +34,7 @@ async function run(): Promise<void> {
     }> = [];
 
     const ctx = {
+      directory: options?.directory,
       client: {
         session: {
           prompt: async (input: {
@@ -179,8 +181,8 @@ async function run(): Promise<void> {
   );
   assert(startOutput.parts[0]?.text?.includes('Autopilot enabled: build plugin'), 'starts autopilot');
   assert(
-    startOutput.parts[0]?.text?.includes('You are the orchestrator for a superpowers-governed workflow.'),
-    'startup prompt uses orchestrator identity',
+    startOutput.parts[0]?.text?.includes('You are Superpowers, the primary agent for this autopilot workflow.'),
+    'startup prompt uses Superpowers identity',
   );
   assert(
     startOutput.parts[0]?.text?.includes('Prefer slim-style specialists before built-in fallbacks.'),
@@ -204,9 +206,301 @@ async function run(): Promise<void> {
       'Task: build plugin',
       'Progress: 0/3 loops',
       'Phase: design (0 loops in phase)',
-      'Recommendation: Continue advancing the current phase for: build plugin',
+      'Recommendation: Continue advancing build plugin',
     ].join('\n'),
     'reports enabled status',
+  );
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('fs');
+  const { join } = await import('path');
+  const { tmpdir } = await import('os');
+
+  const taskAwareDir = mkdtempSync(join(tmpdir(), 'autopilot-execute-state-'));
+  mkdirSync(join(taskAwareDir, 'docs', 'superpowers', 'specs'), {
+    recursive: true,
+  });
+  mkdirSync(join(taskAwareDir, 'docs', 'superpowers', 'plans'), {
+    recursive: true,
+  });
+  writeFileSync(
+    join(taskAwareDir, 'docs', 'superpowers', 'specs', 'auth.md'),
+    '# Auth Spec\nApproved auth scope',
+  );
+  writeFileSync(
+    join(taskAwareDir, 'docs', 'superpowers', 'plans', 'auth-plan.md'),
+    '# Auth Plan\n\n- [x] Prepare fixtures\n\n- [ ] Implement login flow\nFlow notes.\n\n### Verification\n- npm test\n- npm run lint\n\n- [ ] Verify login flow\nConfirm the result.\n',
+  );
+
+  const taskAwareScenario = createPromptCollector({ directory: taskAwareDir });
+  const taskAwareHook = createAutopilotHook(taskAwareScenario.ctx, {
+    defaultMaxLoops: 3,
+    maxLoopsPerPhase: 2,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+  });
+  const taskAwareStartOutput: CommandOutput = { parts: [] };
+  await taskAwareHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-task-aware', arguments: '"build auth"' },
+    taskAwareStartOutput,
+  );
+  assert(
+    taskAwareStartOutput.parts[0]?.text?.includes('Active execute task: Implement login flow'),
+    'startup prompt includes active execute task from parsed plan',
+  );
+  assert(
+    taskAwareStartOutput.parts[0]?.text?.includes('### Active Task Verification\n\n- npm test\n\n- npm run lint'),
+    'startup prompt includes verification bullets for the active task',
+  );
+
+  const taskAwareStatusOutput: CommandOutput = { parts: [] };
+  await taskAwareHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-task-aware', arguments: 'status' },
+    taskAwareStatusOutput,
+  );
+  assert(
+    taskAwareStatusOutput.parts[0]?.text?.includes('Current task: Implement login flow'),
+    'status includes active task title from parsed plan',
+  );
+  assert(
+    taskAwareStatusOutput.parts[0]?.text?.includes('Task status: in_progress'),
+    'status includes active parsed task status',
+  );
+  assert(
+    taskAwareStatusOutput.parts[0]?.text?.includes('Verification required: yes'),
+    'status indicates when the active task requires verification',
+  );
+  assert(
+    taskAwareStatusOutput.parts[0]?.text?.includes('Plan progress: 1 completed, 2 pending'),
+    'status includes parsed plan progress summary',
+  );
+  assert(
+    taskAwareStatusOutput.parts[0]?.text?.includes('Last completed task: Prepare fixtures'),
+    'status includes the last completed task title from parsed plan state',
+  );
+  assert(
+    taskAwareStatusOutput.parts[0]?.text?.includes('Plan: '),
+    'status includes active plan path when parsed plan exists',
+  );
+  assert(
+    taskAwareStatusOutput.parts[0]?.text?.includes(
+      'Recommendation: Continue advancing the active plan task "Implement login flow" for: build auth',
+    ),
+    'recommendation is task-driven when parsed plan state exists',
+  );
+
+  await taskAwareHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-task-aware' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(
+    taskAwareScenario.prompts[0]?.body.parts[0]?.text?.includes('Active task verification:\n- npm test\n- npm run lint'),
+    'continuation prompt includes verification bullets for the active task',
+  );
+  assert(
+    taskAwareScenario.prompts[0]?.body.parts[0]?.text?.includes('Recommended next step: Continue advancing the active plan task "Implement login flow" for: build auth'),
+    'continuation prompt keeps task-aware recommendation alongside verification bullets',
+  );
+
+  await taskAwareHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-task-aware', status: { type: 'complete' } },
+    },
+  });
+
+  const taskAwarePostCompleteStatusOutput: CommandOutput = { parts: [] };
+  await taskAwareHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-task-aware', arguments: 'status' },
+    taskAwarePostCompleteStatusOutput,
+  );
+  assert(
+    taskAwarePostCompleteStatusOutput.parts[0]?.text?.includes('Phase: verify (0 loops in phase)') &&
+      taskAwarePostCompleteStatusOutput.parts[0]?.text?.includes('Task status: in_progress') &&
+      taskAwarePostCompleteStatusOutput.parts[0]?.text?.includes('Verification required: yes') &&
+      taskAwarePostCompleteStatusOutput.parts[0]?.text?.includes('Idle reason: verify_pending') &&
+      taskAwarePostCompleteStatusOutput.parts[0]?.text?.includes('Verification outcome: pending') &&
+      taskAwarePostCompleteStatusOutput.parts[0]?.text?.includes('Last completed task: Implement login flow') &&
+      taskAwarePostCompleteStatusOutput.parts[0]?.text?.includes(
+        'Recommendation: Verify the active plan task "Implement login flow" for: build auth',
+      ),
+    'task completion with verification requirements moves the active task into verify progression',
+  );
+  await taskAwareHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-task-aware' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(
+    taskAwareScenario.prompts[1]?.body.parts[0]?.text?.includes(
+      'Verification phase: confirm the active task satisfies its verification steps before advancing.',
+    ),
+    'verify-phase continuation prompt uses explicit verification wording',
+  );
+  assert(
+    taskAwareScenario.prompts[1]?.body.parts[0]?.text?.includes(
+      'Verification is still pending for the active plan task "Implement login flow" for: build auth.',
+    ),
+    'verify-phase continuation prompt explains that verification is still pending for the active task',
+  );
+  assert(
+    taskAwareScenario.prompts[1]?.body.parts[0]?.text?.includes(
+      'Run the listed verification steps, confirm they pass, and only then advance to the next task.',
+    ),
+    'verify-phase continuation prompt gives explicit next-step guidance for pending verification',
+  );
+
+  const multiTaskDir = mkdtempSync(join(tmpdir(), 'autopilot-multi-task-'));
+  mkdirSync(join(multiTaskDir, 'docs', 'superpowers', 'specs'), {
+    recursive: true,
+  });
+  mkdirSync(join(multiTaskDir, 'docs', 'superpowers', 'plans'), {
+    recursive: true,
+  });
+  writeFileSync(
+    join(multiTaskDir, 'docs', 'superpowers', 'specs', 'feature.md'),
+    '# Feature Spec\nApproved scope',
+  );
+  writeFileSync(
+    join(multiTaskDir, 'docs', 'superpowers', 'plans', 'feature-plan.md'),
+    '# Feature Plan\n\n### Task 1: Implement login flow\nDo the work.\n\n### Verification\n- npm test\n\n### Task 2: Verify login flow\nVerify the result.\n',
+  );
+
+  const multiTaskScenario = createPromptCollector({ directory: multiTaskDir });
+  const multiTaskHook = createAutopilotHook(multiTaskScenario.ctx, {
+    defaultMaxLoops: 3,
+    maxLoopsPerPhase: 2,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+  });
+  await multiTaskHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-multi-task', arguments: '"ship auth"' },
+    { parts: [] },
+  );
+  await multiTaskHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-multi-task', status: { type: 'complete' } },
+    },
+  });
+
+  const multiTaskStatusOutput: CommandOutput = { parts: [] };
+  await multiTaskHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-multi-task', arguments: 'status' },
+    multiTaskStatusOutput,
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Current task: Implement login flow'),
+    'first complete event keeps the same task active while entering verification',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Task status: in_progress'),
+    'verify phase keeps the current task marked in progress',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Verification required: yes'),
+    'verify phase status marks verification as required for the active task',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Idle reason: verify_pending'),
+    'verify phase status exposes verification pending as the explicit idle reason',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Verification outcome: pending'),
+    'verify phase status reports pending verification outcome before verification completes',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Plan progress: 0 completed, 2 pending'),
+    'verify phase status reports task progress before advancement completes',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Last completed task: Implement login flow'),
+    'verify phase status records the task currently under verification as last completed',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes('Phase: verify (0 loops in phase)'),
+    'first complete event moves the active task into verify phase when verification exists',
+  );
+  assert(
+    multiTaskStatusOutput.parts[0]?.text?.includes(
+      'Recommendation: Verify the active plan task "Implement login flow" for: ship auth',
+    ),
+    'verify phase recommendation is emitted before advancing to the next task',
+  );
+
+  await multiTaskHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-multi-task', status: { type: 'complete' } },
+    },
+  });
+
+  const multiTaskPostVerifyStatusOutput: CommandOutput = { parts: [] };
+  await multiTaskHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-multi-task', arguments: 'status' },
+    multiTaskPostVerifyStatusOutput,
+  );
+  assert(
+    multiTaskPostVerifyStatusOutput.parts[0]?.text?.includes('Current task: Verify login flow'),
+    'second complete event advances to the next pending plan task after verification completes',
+  );
+  assert(
+    multiTaskPostVerifyStatusOutput.parts[0]?.text?.includes('Task status: in_progress'),
+    'advancing to the next task marks the new active task in progress',
+  );
+  assert(
+    multiTaskPostVerifyStatusOutput.parts[0]?.text?.includes('Verification required: no'),
+    'status shows when the new active task has no verification requirements',
+  );
+  assert(
+    multiTaskPostVerifyStatusOutput.parts[0]?.text?.includes('Plan progress: 1 completed, 1 pending'),
+    'status updates plan progress after advancing to the next task',
+  );
+  assert(
+    multiTaskPostVerifyStatusOutput.parts[0]?.text?.includes('Last verified task: Implement login flow'),
+    'status records the last verified task after advancing beyond verify phase',
+  );
+  assert(
+    multiTaskPostVerifyStatusOutput.parts[0]?.text?.includes('Verification outcome: passed'),
+    'status records a passed verification outcome after verify completion advances the plan',
+  );
+  assert(
+    multiTaskPostVerifyStatusOutput.parts[0]?.text?.includes(
+      'Recommendation: Continue advancing the active plan task "Verify login flow" for: ship auth',
+    ),
+    'next-task recommendation uses the real parsed task title after advancement',
+  );
+
+  await multiTaskHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-multi-task', status: { type: 'complete' } },
+    },
+  });
+
+  const multiTaskFinalStatusOutput: CommandOutput = { parts: [] };
+  await multiTaskHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-multi-task', arguments: 'status' },
+    multiTaskFinalStatusOutput,
+  );
+  assert(
+    multiTaskFinalStatusOutput.parts[0]?.text?.includes('Phase: complete (0 loops in phase)'),
+    'run reaches complete only after all pending plan tasks are consumed',
+  );
+  assert(
+    !multiTaskFinalStatusOutput.parts[0]?.text?.includes('Current task:'),
+    'final complete status clears active task identity after plan completion',
+  );
+  assert(
+    !multiTaskFinalStatusOutput.parts[0]?.text?.includes('Task status:'),
+    'final complete status does not report an active task status after plan completion',
+  );
+  assert(
+    multiTaskFinalStatusOutput.parts[0]?.text?.includes('Plan progress: 2 completed, 0 pending'),
+    'final complete status reports fully completed plan progress',
+  );
+  assert(
+    multiTaskFinalStatusOutput.parts[0]?.text?.includes('Last verified task: Implement login flow'),
+    'final complete status preserves the last verified task after finishing the plan',
   );
 
   const recommendationMatch = statusOutput.parts[0]?.text?.match(/Recommendation: (.+)/);
@@ -223,8 +517,8 @@ async function run(): Promise<void> {
     'continuation prompt follows recommendation instead of generic continue text',
   );
   assert(
-    prompts[0]?.body.parts[0]?.text?.includes('Continue as orchestrator.'),
-    'continuation prompt reinforces orchestrator role',
+    prompts[0]?.body.parts[0]?.text?.includes('Continue as Superpowers.'),
+    'continuation prompt reinforces Superpowers role',
   );
   assert(
     prompts[0]?.body.parts[0]?.text?.includes('Check whether the next step should be delegated before doing work inline.'),
@@ -550,6 +844,51 @@ async function run(): Promise<void> {
     'resume extends loop budget enough to continue once more',
   );
 
+  const resumeOverrideScenario = createPromptCollector();
+  const resumeOverridePrompts = resumeOverrideScenario.prompts;
+  const resumeOverrideHook = createAutopilotHook(resumeOverrideScenario.ctx, {
+    defaultMaxLoops: 1,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+  });
+  await resumeOverrideHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-resume-override', arguments: '"resume test override"' },
+    { parts: [] },
+  );
+  await resumeOverrideHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-resume-override' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await resumeOverrideHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-resume-override' } },
+  });
+  const resumeOverrideOutput: CommandOutput = { parts: [] };
+  await resumeOverrideHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-resume-override', arguments: 'resume --loops 5' },
+    resumeOverrideOutput,
+  );
+  const resumeOverrideStatusOutput: CommandOutput = { parts: [] };
+  await resumeOverrideHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-resume-override', arguments: 'status' },
+    resumeOverrideStatusOutput,
+  );
+
+  assert(
+    resumeOverrideOutput.parts[0]?.text?.includes('Autopilot resumed: resume test override'),
+    'resume with override reports continuation after a loop-limit stop',
+  );
+  assert(
+    resumeOverrideStatusOutput.parts[0]?.text?.includes('Progress: 1/5 loops'),
+    'resume with override replaces loop budget with the requested value',
+  );
+  assertEqual(
+    resumeOverridePrompts.length,
+    2,
+    'resume override updates state without injecting an extra continuation until the next idle cycle',
+  );
+
   const stalledScenario = createPromptCollector();
   const stalledPrompts = stalledScenario.prompts;
   const stalledHook = createAutopilotHook(stalledScenario.ctx, {
@@ -711,6 +1050,135 @@ async function run(): Promise<void> {
     'stagnation handling does not override blocked/error persistence when stopOnError is disabled',
   );
 
+  const errorContinueStatusOutput: CommandOutput = { parts: [] };
+  await errorContinueHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-error-continue', arguments: 'status' },
+    errorContinueStatusOutput,
+  );
+  assert(
+    !errorContinueStatusOutput.parts[0]?.text?.includes('Verification outcome:'),
+    'generic non-verify error flow does not invent verification outcome metadata',
+  );
+
+  const verifyErrorScenario = createPromptCollector({ directory: multiTaskDir });
+  const verifyErrorHook = createAutopilotHook(verifyErrorScenario.ctx, {
+    defaultMaxLoops: 3,
+    maxLoopsPerPhase: 2,
+    cooldownMs: 0,
+    stopOnError: false,
+    questionDetection: false,
+    todoAware: false,
+  });
+  await verifyErrorHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-verify-error', arguments: '"ship auth"' },
+    { parts: [] },
+  );
+  await verifyErrorHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-verify-error', status: { type: 'complete' } },
+    },
+  });
+  await verifyErrorHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-verify-error', status: { type: 'error' } },
+    },
+  });
+  const verifyErrorStatusOutput: CommandOutput = { parts: [] };
+  await verifyErrorHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-verify-error', arguments: 'status' },
+    verifyErrorStatusOutput,
+  );
+  assert(
+    verifyErrorStatusOutput.parts[0]?.text?.includes('Phase: verify (0 loops in phase)') &&
+      verifyErrorStatusOutput.parts[0]?.text?.includes('Verification outcome: failed') &&
+      verifyErrorStatusOutput.parts[0]?.text?.includes('Idle reason: verify_failed') &&
+      verifyErrorStatusOutput.parts[0]?.text?.includes(
+        'Recommendation: Fix and re-verify the active plan task "Implement login flow" for: ship auth',
+      ),
+    'verify-phase error status records failed verification outcome without leaving verify phase',
+  );
+  await verifyErrorHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-verify-error' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(
+    verifyErrorScenario.prompts[0]?.body.parts[0]?.text?.includes(
+      'Fix and re-verify the active plan task "Implement login flow" for: ship auth.',
+    ),
+    'verify-phase failure uses a dedicated verification-failed continuation prompt',
+  );
+  assert(
+    verifyErrorScenario.prompts[0]?.body.parts[0]?.text?.includes(
+      'Fix the verification failure, rerun the required checks, and only then advance to the next task.',
+    ),
+    'verify-phase failure prompt instructs rerunning verification before advancing',
+  );
+  assert(
+    !verifyErrorScenario.prompts[0]?.body.parts[0]?.text?.includes('Last observed outcome was blocked or errored.'),
+    'verify-phase failure prompt is distinct from the generic blocked/error continuation message',
+  );
+
+  const verifyIssueScenario = createPromptCollector({ directory: multiTaskDir });
+  const verifyIssueHook = createAutopilotHook(verifyIssueScenario.ctx, {
+    defaultMaxLoops: 3,
+    maxLoopsPerPhase: 2,
+    cooldownMs: 0,
+    stopOnError: false,
+    questionDetection: false,
+    todoAware: false,
+  });
+  await verifyIssueHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-verify-issue', arguments: '"ship auth"' },
+    { parts: [] },
+  );
+  await verifyIssueHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-verify-issue', status: { type: 'complete' } },
+    },
+  });
+  await verifyIssueHook.handleEvent({
+    event: {
+      type: 'session.error',
+      properties: {
+        sessionID: 'session-verify-issue',
+        error: { name: 'ToolUnavailableError' },
+      },
+    },
+  });
+  const verifyIssueStatusOutput: CommandOutput = { parts: [] };
+  await verifyIssueHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-verify-issue', arguments: 'status' },
+    verifyIssueStatusOutput,
+  );
+  assert(
+    verifyIssueStatusOutput.parts[0]?.text?.includes('Verification outcome: issue') &&
+      verifyIssueStatusOutput.parts[0]?.text?.includes('Last verify issue: ToolUnavailableError') &&
+      verifyIssueStatusOutput.parts[0]?.text?.includes('Idle reason: verify_issue') &&
+      verifyIssueStatusOutput.parts[0]?.text?.includes(
+        'Recommendation: Restore the environment and re-verify the active plan task "Implement login flow" for: ship auth',
+      ),
+    'verify-phase environment/tooling issue is classified separately from normal verification failure',
+  );
+  await verifyIssueHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-verify-issue' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(
+    verifyIssueScenario.prompts[0]?.body.parts[0]?.text?.includes(
+      'Verification is blocked by an environment or tooling issue for the active plan task "Implement login flow" for: ship auth.',
+    ),
+    'verify-phase environment/tooling issue uses a dedicated issue continuation prompt',
+  );
+  assert(
+    verifyIssueScenario.prompts[0]?.body.parts[0]?.text?.includes(
+      'Stabilize the environment, restore the required tools, and rerun the verification steps before advancing.',
+    ),
+    'verify-phase issue prompt instructs repairing the environment before retrying verification',
+  );
+
   const staleStartScenario = createDeferredPromptCollector();
   const staleStartPrompts = staleStartScenario.prompts;
   const staleStartHook = createAutopilotHook(staleStartScenario.ctx, {
@@ -746,7 +1214,7 @@ async function run(): Promise<void> {
   );
   assert(
     staleStartStatusOutput.parts[0]?.text?.includes('Task: second task') &&
-      staleStartStatusOutput.parts[0]?.text?.includes('Recommendation: Continue advancing the current phase for: second task'),
+      staleStartStatusOutput.parts[0]?.text?.includes('Recommendation: Continue advancing second task'),
     'resolving a stale prompt does not strip the recommendation from a newer start',
   );
   assert(
@@ -986,7 +1454,7 @@ async function run(): Promise<void> {
   assert(
     staleBusyStatusOutput.parts[0]?.text?.includes('Progress: 0/3 loops') &&
       staleBusyStatusOutput.parts[0]?.text?.includes('Phase: design (0 loops in phase)') &&
-      staleBusyStatusOutput.parts[0]?.text?.includes('Recommendation: Continue advancing the current phase for: busy race'),
+      staleBusyStatusOutput.parts[0]?.text?.includes('Recommendation: Continue advancing busy race'),
     'resolving a stale prompt after busy does not mutate counters, phase state, or recommendation',
   );
 
@@ -1069,7 +1537,7 @@ async function run(): Promise<void> {
   assert(
     staleErrorStatusOutput.parts[0]?.text?.includes('Progress: 0/3 loops') &&
       staleErrorStatusOutput.parts[0]?.text?.includes('Phase: design (0 loops in phase)') &&
-      staleErrorStatusOutput.parts[0]?.text?.includes('Recommendation: Continue advancing the current phase for: error race'),
+      staleErrorStatusOutput.parts[0]?.text?.includes('Recommendation: Continue advancing error race'),
     'resolving a stale prompt after error does not mutate counters or clear recommendation state',
   );
 
@@ -1153,6 +1621,16 @@ async function run(): Promise<void> {
     '[AUTOPILOT-INTERNAL]\nError: maxLoops must be a positive integer',
     'tool execute rejects non-positive maxLoops with the same validation as command parsing',
   );
+  const rawStatusToolExecuteOutput: CommandOutput = { parts: [] };
+  await invalidToolExecuteHook.handleToolExecute(
+    { sessionID: 'session-invalid-tool-execute', raw: 'status' },
+    rawStatusToolExecuteOutput,
+  );
+  assertEqual(
+    rawStatusToolExecuteOutput.parts[0]?.text,
+    '[AUTOPILOT-INTERNAL]\nAutopilot: disabled',
+    'tool execute accepts raw command arguments for status-style command fallback',
+  );
   const normalHookWithoutTestControls = createAutopilotHook(createPromptCollector().ctx, {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
@@ -1202,6 +1680,8 @@ async function run(): Promise<void> {
     configReadable: false,
     superpowersDeclared: false,
     autopilotInstalled: false,
+    installReady: false,
+    executionReady: false,
     availableAgents: [],
     ready: false,
     missing: ['configUnreadable', 'superpowersUndeclared', 'autopilotMissing'],
@@ -1242,6 +1722,8 @@ async function run(): Promise<void> {
     configReadable: true,
     superpowersDeclared: true,
     autopilotInstalled: false,
+    installReady: false,
+    executionReady: false,
     availableAgents: [],
     ready: false,
     missing: ['autopilotMissing'],
@@ -1254,7 +1736,7 @@ async function run(): Promise<void> {
       approvalPending: false,
     }),
     false,
-    'FULL tasks do not auto-start when readiness fails',
+    'execution does not auto-start without approved artifacts when readiness fails',
   );
 
   const autoStartReadyHook = createAutopilotHookForTest(createPromptCollector().ctx, {
@@ -1268,13 +1750,15 @@ async function run(): Promise<void> {
     configReadable: true,
     superpowersDeclared: true,
     autopilotInstalled: true,
+    installReady: true,
+    executionReady: false,
     availableAgents: [
-      'autopilot-orchestrator',
-      'autopilot-explorer',
-      'autopilot-implementer',
-      'autopilot-knowledge',
-      'autopilot-designer',
-      'autopilot-reviewer',
+      'superpowers',
+      'superpowers-explorer',
+      'superpowers-implementer',
+      'superpowers-knowledge',
+      'superpowers-designer',
+      'superpowers-reviewer',
     ],
     ready: true,
     missing: [],
@@ -1282,12 +1766,15 @@ async function run(): Promise<void> {
   assertEqual(
     autoStartReadyHook.shouldAutoStartForTest({
       classification: 'FULL',
-      artifactPaths: [],
+      artifactPaths: [
+        'docs/superpowers/specs/feature-approved.md',
+        'docs/superpowers/plans/feature-approved.md',
+      ],
       currentAction: 'implement feature',
       approvalPending: false,
     }),
     true,
-    'FULL tasks auto-start when readiness is satisfied',
+    'approved artifact execution auto-starts when readiness is satisfied',
   );
 
   const resumeBlockedScenario = createPromptCollector();
@@ -1310,13 +1797,15 @@ async function run(): Promise<void> {
     configReadable: false,
     superpowersDeclared: false,
     autopilotInstalled: true,
+    installReady: false,
+    executionReady: false,
     availableAgents: [
-      'autopilot-orchestrator',
-      'autopilot-explorer',
-      'autopilot-implementer',
-      'autopilot-knowledge',
-      'autopilot-designer',
-      'autopilot-reviewer',
+      'superpowers',
+      'superpowers-explorer',
+      'superpowers-implementer',
+      'superpowers-knowledge',
+      'superpowers-designer',
+      'superpowers-reviewer',
     ],
     ready: false,
     missing: ['configUnreadable'],
