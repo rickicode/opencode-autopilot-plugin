@@ -24,8 +24,10 @@ import {
   isQuestion,
   countIncompleteTodos,
   buildCountdownNotification,
+  buildTaskContextFromSuperpowers,
 } from './utils';
 import { AUTOPILOT_AGENT_IDS } from './agent-manifest';
+import { getOrchestratorDelegationGuide } from './subagents';
 
 type ParsedAutopilotCommand = ReturnType<typeof parseAutopilotCommand>;
 
@@ -65,6 +67,7 @@ interface AutopilotHookTestControls {
 function buildStartupInstructions(
   state: AutopilotState,
   config: AutopilotConfig,
+  projectDir?: string,
 ): string {
   const executeStopLine = config.stopOnError
     ? '- Execute: implementer BLOCKED, verification FAILED'
@@ -79,6 +82,19 @@ function buildStartupInstructions(
     ? undefined
     : '- Complete: auto-proceed after verification; stopBeforeMerge=false';
 
+  let taskContext: string | undefined;
+  if (projectDir) {
+    const superpowersContext = buildTaskContextFromSuperpowers(projectDir);
+    if (superpowersContext) {
+      taskContext = superpowersContext;
+    }
+  }
+
+  const delegationGuide = getOrchestratorDelegationGuide();
+  const fullDelegationGuide = taskContext
+    ? `${delegationGuide}\n\n${taskContext}`
+    : delegationGuide;
+
   return buildOrchestratorStartupGuidance({
     task: state.task,
     maxLoops: state.maxLoops,
@@ -86,6 +102,7 @@ function buildStartupInstructions(
     completeLine,
     completeStopLine,
     completeBehaviorLine,
+    delegationGuide: fullDelegationGuide,
   });
 }
 
@@ -219,12 +236,33 @@ function createAutopilotHookInternal(
       return readinessOverride;
     }
 
+    // Plugin is loaded, so config was readable
+    const configReadable = true;
+    const superpowersDeclared = checkSuperpowersDeclared();
     return evaluateReadiness({
-      configReadable: true,
-      superpowersDeclared: true,
+      configReadable,
+      superpowersDeclared,
       autopilotInstalled: true,
       availableAgents: [...AUTOPILOT_AGENT_IDS],
     });
+  }
+
+  function checkSuperpowersDeclared(): boolean {
+    if (!ctx.directory) {
+      return false;
+    }
+    try {
+      const fs = require('fs') as typeof import('fs');
+      const path = require('path') as typeof import('path');
+      const superpowersDir = path.join(
+        ctx.directory,
+        'docs',
+        'superpowers-optimized',
+      );
+      return fs.existsSync(superpowersDir);
+    } catch {
+      return false;
+    }
   }
 
   function formatReadinessBlockedMessage(readiness: ReadinessResult): string {
@@ -236,7 +274,12 @@ function createAutopilotHookInternal(
 
   function ensureReady(output: CommandOutput): boolean {
     const readiness = resolveReadiness();
-    if (readiness.ready) {
+    // Autopilot is ready if no blocking issues exist.
+    // superpowersUndeclared is informational — doesn't block startup.
+    const blockingMissing = readiness.missing.filter(
+      (m) => m !== 'superpowersUndeclared',
+    );
+    if (blockingMissing.length === 0) {
       return true;
     }
 
@@ -247,7 +290,11 @@ function createAutopilotHookInternal(
   }
 
   function shouldAutoStart(triggerInput: ExecutionTriggerInput): boolean {
-    if (!resolveReadiness().ready) {
+    const readiness = resolveReadiness();
+    const blockingMissing = readiness.missing.filter(
+      (m) => m !== 'superpowersUndeclared',
+    );
+    if (blockingMissing.length > 0) {
       return false;
     }
 
@@ -446,7 +493,7 @@ function createAutopilotHookInternal(
 
         output.parts.push(
           createInternalPrompt(
-            buildStartupInstructions(state, config),
+            buildStartupInstructions(state, config, ctx.directory),
           ),
         );
         break;

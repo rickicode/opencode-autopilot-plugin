@@ -1,6 +1,7 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { createAutopilotHook } from './autopilot-hook';
 import type { AutopilotConfig, AutopilotHook, CommandOutput } from './types';
+import { buildSubagentConfigs, buildOrchestratorConfig } from './subagents';
 
 const AutopilotPlugin: Plugin = async (ctx) => {
   const userConfig = (ctx.config?.autopilot ?? {}) as Partial<AutopilotConfig>;
@@ -47,14 +48,54 @@ const AutopilotPlugin: Plugin = async (ctx) => {
     },
   });
 
+  const subagentConfigs = buildSubagentConfigs();
+  const orchestratorConfig = buildOrchestratorConfig();
+  const agents = {
+    orchestrator: orchestratorConfig,
+    ...subagentConfigs,
+  };
+
   return {
     name: 'autopilot',
+
+    agent: agents,
 
     tool: {
       autopilot: autopilotTool,
     },
 
     config: async (opencodeConfig: Record<string, unknown>) => {
+      // Set orchestrator as default agent
+      if (
+        !(opencodeConfig as { default_agent?: string }).default_agent
+      ) {
+        (opencodeConfig as { default_agent?: string }).default_agent =
+          'orchestrator';
+      }
+
+      // Merge agent configs — per-agent shallow merge to preserve
+      // user-supplied fields (e.g. tools, permission) from opencode.json
+      if (!opencodeConfig.agent) {
+        opencodeConfig.agent = { ...agents };
+      } else {
+        for (const [name, pluginAgent] of Object.entries(agents)) {
+          const existing = (opencodeConfig.agent as Record<string, unknown>)[
+            name
+          ] as Record<string, unknown> | undefined;
+          if (existing) {
+            (opencodeConfig.agent as Record<string, unknown>)[name] = {
+              ...pluginAgent,
+              ...existing,
+            };
+          } else {
+            (opencodeConfig.agent as Record<string, unknown>)[name] = {
+              ...pluginAgent,
+            };
+          }
+        }
+      }
+
+      // Register /autopilot command
       const commandRegistry =
         opencodeConfig.command && typeof opencodeConfig.command === 'object'
           ? (opencodeConfig.command as Record<string, unknown>)

@@ -50,6 +50,7 @@ async function run(): Promise<void> {
 
   const plugin = (await AutopilotPlugin(ctx)) as {
     name: string;
+    agent?: Record<string, unknown>;
     tool?: Record<string, unknown>;
     'command.execute.before'?: (input: unknown, output: unknown) => Promise<void>;
     config?: (opencodeConfig: Record<string, unknown>) => Promise<void>;
@@ -71,6 +72,23 @@ async function run(): Promise<void> {
   );
   assert(typeof plugin.event === 'function', 'exposes event hook');
 
+  // Agent registration
+  assert(typeof plugin.agent === 'object', 'registers agent configs');
+  const agentRegistry = plugin.agent as Record<string, Record<string, unknown>>;
+  assert(agentRegistry.orchestrator !== undefined, 'registers orchestrator agent');
+  assert(
+    (agentRegistry.orchestrator as { mode?: string }).mode === 'primary',
+    'orchestrator is primary mode',
+  );
+  const expectedSubagents = ['explorer', 'librarian', 'oracle', 'designer', 'fixer', 'observer'];
+  for (const name of expectedSubagents) {
+    assert(agentRegistry[name] !== undefined, `registers ${name} subagent`);
+    assert(
+      (agentRegistry[name] as { mode?: string }).mode === 'subagent',
+      `${name} is subagent mode`,
+    );
+  }
+
   const opencodeConfig: Record<string, unknown> = {};
   await plugin.config?.(opencodeConfig);
   const commandRegistry = (opencodeConfig.command ?? {}) as Record<string, unknown>;
@@ -82,6 +100,35 @@ async function run(): Promise<void> {
     typeof autopilotCommand.description === 'string' &&
       autopilotCommand.description.includes('/autopilot'),
     'config hook registers slash-command description for autopilot',
+  );
+
+  // Config hook sets default_agent
+  assert(
+    (opencodeConfig as { default_agent?: string }).default_agent === 'orchestrator',
+    'config hook sets orchestrator as default agent',
+  );
+
+  // Config hook merges agent configs
+  const mergedAgents = opencodeConfig.agent as Record<string, unknown>;
+  assert(mergedAgents !== undefined, 'config hook merges agents into opencodeConfig');
+  assert(mergedAgents.orchestrator !== undefined, 'config hook includes orchestrator agent');
+  for (const name of expectedSubagents) {
+    assert(mergedAgents[name] !== undefined, `config hook includes ${name} agent`);
+  }
+
+  // Config hook preserves existing user agents
+  const configWithExisting: Record<string, unknown> = {
+    agent: { 'custom-agent': { prompt: 'user-custom' } },
+  };
+  await plugin.config?.(configWithExisting);
+  const mergedWithExisting = configWithExisting.agent as Record<string, Record<string, unknown>>;
+  assert(
+    mergedWithExisting['custom-agent']?.prompt === 'user-custom',
+    'config hook preserves existing user agents',
+  );
+  assert(
+    mergedWithExisting.orchestrator !== undefined,
+    'config hook adds orchestrator alongside existing agents',
   );
   assert(
     autopilotTool.description ===

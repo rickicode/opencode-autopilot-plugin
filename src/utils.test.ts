@@ -5,6 +5,8 @@ import {
   isQuestion,
   countIncompleteTodos,
   buildCountdownNotification,
+  readSuperpowersTask,
+  buildTaskContextFromSuperpowers,
 } from './utils';
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
@@ -146,3 +148,39 @@ assert(!singularNotification.includes('todos'), 'singular: does not contain todo
 const nullNotification = buildCountdownNotification(null, 3);
 assert(!nullNotification.includes('incomplete'), 'null count omits todo segment');
 assert(nullNotification.includes('resuming in 3s'), 'null count still shows cooldown');
+
+// readSuperpowersTask tests
+import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+
+const emptyDir = mkdtempSync(join(tmpdir(), 'autopilot-no-sp-'));
+const noSpResult = readSuperpowersTask(emptyDir);
+assertEqual(noSpResult.hasSuperpowers, false, 'returns hasSuperpowers=false when dir missing');
+assertEqual(noSpResult.specs.length, 0, 'returns empty specs when dir missing');
+assertEqual(noSpResult.plans.length, 0, 'returns empty plans when dir missing');
+
+const spDir = mkdtempSync(join(tmpdir(), 'autopilot-sp-'));
+const specsDir = join(spDir, 'docs', 'superpowers-optimized', 'specs');
+const plansDir = join(spDir, 'docs', 'superpowers-optimized', 'plans');
+mkdirSync(specsDir, { recursive: true });
+mkdirSync(plansDir, { recursive: true });
+writeFileSync(join(specsDir, 'auth.md'), '# Auth Spec\nJWT auth flow');
+writeFileSync(join(plansDir, 'auth-plan.md'), '# Auth Plan\nStep 1: Add JWT');
+
+const spResult = readSuperpowersTask(spDir);
+assertEqual(spResult.hasSuperpowers, true, 'detects superpowers directory');
+assertEqual(spResult.specs.length, 1, 'reads spec files');
+assertEqual(spResult.plans.length, 1, 'reads plan files');
+assert(spResult.specs[0].includes('Auth Spec'), 'spec content includes file content');
+assert(spResult.plans[0].includes('Auth Plan'), 'plan content includes file content');
+
+// buildTaskContextFromSuperpowers tests
+const noContext = buildTaskContextFromSuperpowers(emptyDir);
+assertEqual(noContext, null, 'returns null when no superpowers');
+
+const context = buildTaskContextFromSuperpowers(spDir);
+assert(context !== null, 'returns context when superpowers exists');
+assert(context!.includes('Superpowers Context'), 'context includes header');
+assert(context!.includes('Auth Spec'), 'context includes spec content');
+assert(context!.includes('Auth Plan'), 'context includes plan content');
