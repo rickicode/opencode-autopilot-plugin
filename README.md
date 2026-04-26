@@ -1,17 +1,47 @@
 # OpenCode Autopilot Plugin
 
-Autopilot mode for OpenCode. It turns a normal task request into a bounded autonomous workflow that follows the Superpowers agent process, shows loop status, and stops at safety checkpoints.
+Autopilot mode for OpenCode. It turns a normal task request into a bounded autonomous workflow that follows the Superpowers process, shows loop status, prefers delegated execution, and stops at safety checkpoints.
 
-This repository contains the maintained TypeScript source, bootstrap installer, and tests for the OpenCode autopilot package and local installation flow.
+This repository is the **maintained TypeScript source** for the autopilot plugin, bootstrap installer, and test suite.
 
-## Current Status
+## Quick Start
 
-- Maintained source package: `/workspaces/autopilot-plugin` *(environment-specific example from the author's workspace)*
+### Current supported install flow
+
+```bash
+npm install
+npm run bootstrap:dry-run
+npm run bootstrap:install
+```
+
+Then verify the current installed state:
+
+```bash
+npm run readiness:check
+```
+
+Run the full repo verification suite:
+
+```bash
+npm test
+```
+
+## Prerequisites
+
+You should have:
+
+- Node.js and npm
+- an OpenCode installation
+- a writable OpenCode config file, typically `~/.config/opencode/opencode.json`
+- a POSIX shell (`sh`, `bash`, or `zsh`) for the command examples shown in this README
+
+## Repository Role
+
+- Maintained source package: this repository
 - Local bootstrap entrypoint: `scripts/install-autopilot.mjs`
 - Build output consumed by the installer: `dist/bootstrap.js`
-- Active environment-specific plugin copies may still exist elsewhere during integration testing
 
-This repo is the maintained implementation source for the autopilot bootstrap/package flow. If you also keep a separately copied plugin file under an OpenCode config directory, treat that as a deployment artifact or downstream integration target, not the primary source of truth.
+If you also keep a separately copied plugin file under an OpenCode config directory, treat that as a **deployment artifact** or downstream integration target, not the primary source of truth.
 
 ## What Autopilot Does
 
@@ -193,7 +223,7 @@ However, top-level `autopilot` config in `~/.config/opencode/opencode.json` was 
 
 Current safe default is `10`, clamped to `1..30`.
 
-## Bootstrap Installation
+## Installation
 
 Use the bootstrap installer flow instead of editing OpenCode config by hand.
 
@@ -219,7 +249,19 @@ Dry-run the same local installer without mutating config:
 npm run bootstrap:dry-run
 ```
 
-Hosted curl piping is **not** the current supported path for this repo as-is, because `scripts/install-autopilot.mjs` imports `../dist/bootstrap.js` and is not a stdin-standalone artifact. If you later publish a hosted standalone installer, the UX could look like this illustrative future example:
+Check the **current installed state** without applying changes:
+
+```bash
+npm run readiness:check
+```
+
+That command reads your config as it exists on disk and exits non-zero if the installation is not actually ready.
+
+### Current support vs future curl installer
+
+Hosted curl piping is **not** the current supported path for this repo as-is, because `scripts/install-autopilot.mjs` imports `../dist/bootstrap.js` and is not a stdin-standalone artifact.
+
+The examples below are **illustrative future UX only**. They are not the supported install path today.
 
 ```bash
 curl -fsSL <install-autopilot-url> | node
@@ -248,7 +290,7 @@ A successful bootstrap leaves your OpenCode config in a state where:
 - the Superpowers plugin entry is declared
 - the managed autopilot agents are provisioned
 - `autopilot-orchestrator` is available as the managed default agent when no conflicting default is already pinned
-- the installer reports readiness after validating the merged config
+- `npm run readiness:check` reports the **current installed state** as ready
 
 ### Supported assumptions
 
@@ -262,9 +304,9 @@ This task does **not** provide full runtime autopilot behavior parity with upstr
 
 ### Local verification
 
-That dry-run package script sets `AUTOPILOT_DRY_RUN=1`, so it simulates the merge, reports readiness from the simulated merged config, and does not rewrite the file. The bootstrap wizard's emitted `next` command should match these npm-script forms rather than recommending direct `node scripts/install-autopilot.mjs` usage.
+`npm run bootstrap:dry-run` sets `AUTOPILOT_DRY_RUN=1`, so it simulates the merge, reports readiness from the simulated merged config, and does not rewrite the file.
 
-If you want a standalone readiness report without applying changes, use:
+If you want a standalone readiness report for the current installed state without applying changes, use:
 
 ```bash
 npm run readiness:check
@@ -290,12 +332,7 @@ Secondary downstream/integration verification, if you are also validating an ext
 node --test "tests/autopilot-plugin.test.mjs"
 ```
 
-Expected result:
-
-```text
-22 pass
-0 fail
-```
+Expected result: all tests pass and the suite reports `0 fail`.
 
 Optional downstream syntax check for separately deployed plugin copies using environment-specific example paths:
 
@@ -417,6 +454,29 @@ Planned safeguards:
 - Plugin state is per plugin instance, not durable across all OpenCode sessions.
 - Global/repo plugin parity depends on keeping both files synchronized.
 - Planned `/autopilot review` mode is not implemented yet.
+
+## Troubleshooting
+
+### `npm run readiness:check` exits non-zero
+
+That means the current installed state is not ready yet. Common causes:
+
+- Superpowers plugin is not declared in OpenCode config
+- managed autopilot agents are not present yet
+- OpenCode config path is wrong
+- OpenCode config file is unreadable or invalid JSON
+
+Recommended flow:
+
+```bash
+npm run bootstrap:dry-run
+npm run bootstrap:install
+npm run readiness:check
+```
+
+### Bootstrap commands work in bash but not in another shell
+
+The documented install examples currently assume a POSIX shell. If you use a different shell environment, set `OPENCODE_CONFIG_PATH` in the equivalent syntax for that shell before running the npm scripts.
 
 ## License
 
