@@ -81,7 +81,10 @@ function buildNextCommand(configPath: string, dryRun: boolean): string {
     : `Verify installation: ${buildVerifyCommand(configPath)}`;
 }
 
-export function getReadinessFromConfig(config: Record<string, any>) {
+export function getReadinessFromConfig(
+  config: Record<string, any>,
+  configPath?: string,
+) {
   const pluginEntries = Array.isArray(config.plugin) ? config.plugin : [];
   const localAutopilotPlugin = getLocalAutopilotPluginEntry();
   const availableAgents =
@@ -107,6 +110,8 @@ export function getReadinessFromConfig(config: Record<string, any>) {
       && availableAgents.includes('superpowers')
       && autopilotCommand?.template === AUTOPILOT_SUPERPOWERS_COMMAND_TEMPLATE
       && autopilotCommand?.agent === AUTOPILOT_SUPERPOWERS_COMMAND_CONFIG.agent,
+    autopilotCommandFileInstalled:
+      configPath !== undefined && hasInstalledAutopilotCommandFile(configPath),
     availableAgents,
   });
 }
@@ -120,7 +125,7 @@ export function readCurrentReadiness(configPath: string): {
 
     return {
       steps: [...BOOTSTRAP_STEPS],
-      readiness: getReadinessFromConfig(config),
+      readiness: getReadinessFromConfig(config, configPath),
     };
   } catch (error) {
     if (error instanceof BootstrapError) {
@@ -139,6 +144,7 @@ function getUnreadableReadiness() {
     configReadable: false,
     superpowersDeclared: false,
     autopilotInstalled: false,
+    autopilotCommandFileInstalled: false,
     availableAgents: [],
   });
 }
@@ -183,12 +189,22 @@ function tryReadConfigForDryRun(configPath: string): Record<string, any> | null 
   }
 }
 
-function writeAutopilotCommandFile(configPath: string): void {
-  const configDir = dirname(configPath);
-  const commandsDir = join(configDir, 'commands');
-  const commandPath = join(commandsDir, `${AUTOPILOT_SUPERPOWERS_COMMAND_NAME}.md`);
+function getAutopilotCommandFilePath(configPath: string): string {
+  return join(
+    dirname(configPath),
+    'commands',
+    `${AUTOPILOT_SUPERPOWERS_COMMAND_NAME}.md`,
+  );
+}
 
-  mkdirSync(commandsDir, { recursive: true });
+function hasInstalledAutopilotCommandFile(configPath: string): boolean {
+  return existsSync(getAutopilotCommandFilePath(configPath));
+}
+
+function writeAutopilotCommandFile(configPath: string): void {
+  const commandPath = getAutopilotCommandFilePath(configPath);
+
+  mkdirSync(dirname(commandPath), { recursive: true });
   writeFileSync(commandPath, AUTOPILOT_COMMAND_FILE);
 }
 
@@ -208,7 +224,9 @@ export async function bootstrapAutopilot(
       nextCommand: buildNextCommand(options.configPath, true),
       conflicts: merged?.conflicts ?? [],
       readiness:
-        merged === null ? getUnreadableReadiness() : getReadinessFromConfig(merged.config),
+        merged === null
+          ? getUnreadableReadiness()
+          : getReadinessFromConfig(merged.config, options.configPath),
     };
   }
 
@@ -241,6 +259,6 @@ export async function bootstrapAutopilot(
     nextCommand: buildNextCommand(options.configPath, false),
     backupPath,
     conflicts: merged.conflicts,
-    readiness: getReadinessFromConfig(writtenConfig),
+    readiness: getReadinessFromConfig(writtenConfig, options.configPath),
   };
 }

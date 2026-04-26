@@ -492,6 +492,7 @@ function createAutopilotHookInternal(
       configReadable,
       superpowersDeclared,
       autopilotInstalled: true,
+      autopilotCommandFileInstalled: true,
       availableAgents: [...AUTOPILOT_AGENT_IDS],
       artifactPaths: ctx.directory
         ? ['docs/superpowers/specs', 'docs/superpowers/plans']

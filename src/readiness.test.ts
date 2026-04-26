@@ -40,6 +40,7 @@ test('evaluateReadiness returns ready state for complete canonical and fallback 
     configReadable: true,
     superpowersDeclared: true,
     autopilotInstalled: true,
+    autopilotCommandFileInstalled: true,
     availableAgents: [
       'autopilot-orchestrator',
       'superpowers',
@@ -78,6 +79,7 @@ test('evaluateReadiness reports missing agent availability', () => {
       configReadable: true,
       superpowersDeclared: true,
       autopilotInstalled: false,
+      autopilotCommandFileInstalled: true,
       availableAgents: [
         'superpowers',
         'builtin-explorer',
@@ -110,6 +112,7 @@ test('evaluateReadiness rejects incomplete agent set even when autopilotInstalle
     configReadable: true,
     superpowersDeclared: true,
     autopilotInstalled: true,
+    autopilotCommandFileInstalled: true,
     availableAgents: [
       'superpowers',
       'builtin-explorer',
@@ -131,6 +134,7 @@ test('evaluateReadiness marks execution ready when approved spec and plan artifa
     configReadable: true,
     superpowersDeclared: true,
     autopilotInstalled: true,
+    autopilotCommandFileInstalled: true,
     availableAgents: [
       'superpowers',
       'builtin-explorer',

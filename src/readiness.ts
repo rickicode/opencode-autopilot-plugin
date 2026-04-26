@@ -62,7 +62,10 @@ export function evaluateReadiness(
   const autopilotInstalled =
     input.autopilotInstalled && availableAgents.length === AUTOPILOT_AGENT_IDS.length;
   const installReady =
-    input.configReadable && input.superpowersDeclared && autopilotInstalled;
+    input.configReadable
+    && input.superpowersDeclared
+    && autopilotInstalled
+    && input.autopilotCommandFileInstalled;
   const executionReady =
     installReady && hasApprovedExecutionArtifacts(input.artifactPaths ?? []);
   const missing: ReadinessResult['missing'] = [];
@@ -77,6 +80,10 @@ export function evaluateReadiness(
 
   if (!autopilotInstalled) {
     missing.push('autopilotMissing');
+  }
+
+  if (autopilotInstalled && !input.autopilotCommandFileInstalled) {
+    missing.push('autopilotCommandFileMissing');
   }
 
   return {

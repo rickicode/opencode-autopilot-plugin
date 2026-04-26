@@ -123,7 +123,8 @@ export type AutopilotClassification = 'MICRO' | 'LIGHTWEIGHT' | 'FULL';
 export type ReadinessMissingReason =
   | 'configUnreadable'
   | 'superpowersUndeclared'
-  | 'autopilotMissing';
+  | 'autopilotMissing'
+  | 'autopilotCommandFileMissing';
 
 export type ReadinessTriggerReason =
   | 'approval-pending'
@@ -146,6 +147,7 @@ export interface ReadinessEvaluationInput {
   configReadable: boolean;
   superpowersDeclared: boolean;
   autopilotInstalled: boolean;
+  autopilotCommandFileInstalled: boolean;
   availableAgents: string[];
   artifactPaths?: string[];
 }

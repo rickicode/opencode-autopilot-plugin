@@ -1,22 +1,24 @@
 ## Current Goal
-Make autopilot actually auto-start during Superpowers implementation/executing-task flow when approved artifacts are present.
+Prove end-to-end `/autopilot` execution in installed OpenCode runtime after fixing local install/readiness gaps.
 
 ## Decisions
-- Approved Superpowers artifact execution now auto-starts autopilot from the live `session.status` busy path in `src/autopilot-hook.ts`.
-- `shouldAutoStart` is no longer test-only in practice; runtime now uses the same trigger decision instead of leaving it disconnected.
-- Auto-start activates session state directly instead of depending on the `/autopilot` command template executing inside the implementation flow.
+- Approved Superpowers artifact execution auto-starts autopilot from the live `session.status` busy path in `src/autopilot-hook.ts`.
+- Install readiness now requires the active config path to contain `commands/autopilot.md`, not just merged JSON command metadata.
+- Missing command markdown is tracked as a dedicated readiness blocker so install false-positives fail before smoke testing.
 
 ## Plan Status
-- Added a regression test in `src/autopilot-hook.test.ts` for live runtime auto-start on implementation/execution.
-- Wired the runtime hook so approved artifact execution enables autopilot before idle continuation logic runs.
-- Focused hook verification and full suite verification completed successfully.
+- Added runtime auto-start regression coverage in `src/autopilot-hook.test.ts` and verified the hook fix earlier in this task.
+- Added bootstrap regression coverage proving readiness flips false when `commands/autopilot.md` is removed after an otherwise valid install.
+- Updated bootstrap/readiness/runtime stubs to support the command-file-installed gate; full `npm test` passes.
+- Reinstalled into `~/.config/opencode/opencode.json`; `npm run readiness:check` now reports `ready=true` with no missing items.
 
 ## Evidence
-- `src/autopilot-hook.test.ts` now proves approved artifact execution enables autopilot in the live runtime path.
-- `src/autopilot-hook.ts` reads trigger metadata from `session.status` and auto-starts on `busy` when artifacts and readiness qualify.
-- `npm run build && node --test "dist/autopilot-hook.test.js"` passed after the fix.
-- `npm test` passed after the fix.
+- `src/bootstrap.test.ts` now proves a valid install becomes not ready when `commands/autopilot.md` is removed.
+- `src/bootstrap.ts`, `src/readiness.ts`, `src/readiness.test.ts`, `src/types.ts`, and `src/autopilot-hook.ts` enforce the command-file-installed readiness gate.
+- `npm test` passed after the readiness/install fix.
+- `OPENCODE_CONFIG_PATH="$HOME/.config/opencode/opencode.json" npm run readiness:check` returned `ready=true` and `missing=`.
+- `OPENCODE_CONFIG_PATH="$HOME/.config/opencode/opencode.json" opencode run --command autopilot --agent superpowers -- "status"` still failed because the host runtime reported the `autopilot` tool was unavailable.
 
 ## Open Issues
 - Repo changes are still uncommitted.
-- Installed OpenCode runtime should be re-checked to confirm it emits the expected trigger metadata consistently.
+- Remaining blocker is host runtime tool injection for `opencode run --command autopilot`, not local install readiness.

@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import {
+  AUTOPILOT_SUPERPOWERS_COMMAND_TEMPLATE,
+} from './command-config';
 import test from 'node:test';
 import {
   bootstrapAutopilot,
@@ -304,7 +309,8 @@ test('bootstrap dry-run leaves filesystem untouched and computes readiness from 
   assert.equal(existsSync(`${configPath}.bak`), false);
   assert.equal(result.backupPath, undefined);
   assert.equal(result.readiness.configReadable, true);
-  assert.equal(result.readiness.ready, true);
+  assert.equal(result.readiness.ready, false);
+  assert.deepEqual(result.readiness.missing, ['autopilotCommandFileMissing']);
   assert.deepEqual(result.conflicts, []);
 });
 
@@ -327,7 +333,8 @@ test('bootstrap dry-run reports readiness from merged valid config instead of fa
   assert.equal(result.readiness.configReadable, true);
   assert.equal(result.readiness.superpowersDeclared, true);
   assert.equal(result.readiness.autopilotInstalled, true);
-  assert.equal(result.readiness.ready, true);
+  assert.equal(result.readiness.ready, false);
+  assert.deepEqual(result.readiness.missing, ['autopilotCommandFileMissing']);
 });
 
 test('bootstrap non-dry-run returns supported npm dry-run guidance instead of direct script invocation', async () => {
@@ -479,6 +486,11 @@ test('readiness check script exits zero for an already-installed current config'
       },
     },
   }, null, 2));
+  mkdirSync(join(root, 'commands'), { recursive: true });
+  writeFileSync(
+    join(root, 'commands', 'autopilot.md'),
+    `---\ndescription: slash\nagent: superpowers\n---\n${AUTOPILOT_SUPERPOWERS_COMMAND_TEMPLATE}\n`,
+  );
 
   const result = spawnSync(getNpmCommand(), ['run', 'readiness:check', '--silent'], {
     cwd: join(__dirname, '..'),
@@ -492,6 +504,39 @@ test('readiness check script exits zero for an already-installed current config'
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /ready=true/);
   assert.match(result.stdout, /missing=$/m);
+});
+
+test('bootstrap readiness requires installed autopilot command markdown file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'autopilot-readiness-'));
+  const configPath = join(root, 'opencode.json');
+  const commandPath = join(root, 'commands', 'autopilot.md');
+
+  writeFileSync(configPath, JSON.stringify({
+    plugin: [SUPERPOWERS_PLUGIN, LOCAL_AUTOPILOT_PLUGIN],
+    agent: Object.fromEntries(
+      MANAGED_AUTOPILOT_AGENT_IDS.map((id) => [id, { prompt: `${id}-prompt` }]),
+    ),
+    command: {
+      autopilot: {
+        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        agent: 'superpowers',
+      },
+    },
+  }, null, 2));
+  mkdirSync(join(root, 'commands'), { recursive: true });
+  writeFileSync(
+    commandPath,
+    `---\ndescription: slash\nagent: superpowers\n---\n${AUTOPILOT_SUPERPOWERS_COMMAND_TEMPLATE}\n`,
+  );
+
+  const beforeRemoval = readCurrentReadiness(configPath);
+  unlinkSync(commandPath);
+  const afterRemoval = readCurrentReadiness(configPath);
+
+  assert.equal(beforeRemoval.readiness.ready, true);
+  assert.equal(afterRemoval.readiness.autopilotInstalled, true);
+  assert.equal(afterRemoval.readiness.ready, false);
+  assert.deepEqual(afterRemoval.readiness.missing, ['autopilotCommandFileMissing']);
 });
 
 test('bootstrap dry-run reports unreadable readiness for nonexistent config path', async () => {
