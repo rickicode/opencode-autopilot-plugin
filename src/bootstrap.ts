@@ -12,6 +12,7 @@ import {
   SUPERPOWERS_PLUGIN,
 } from './config-merge';
 import {
+  AUTOPILOT_COMMAND_CONFIG,
   AUTOPILOT_COMMAND_DESCRIPTION,
   AUTOPILOT_COMMAND_TEMPLATE,
 } from './command-config';
@@ -41,7 +42,7 @@ const BOOTSTRAP_STEPS = [
 
 const AUTOPILOT_COMMAND_FILE = `---
 description: ${AUTOPILOT_COMMAND_DESCRIPTION}
-agent: superpowers
+agent: ${AUTOPILOT_COMMAND_CONFIG.agent}
 ---
 ${AUTOPILOT_COMMAND_TEMPLATE}
 `;
@@ -103,7 +104,8 @@ export function getReadinessFromConfig(config: Record<string, any>) {
     autopilotInstalled:
       pluginEntries.some((entry) => entry === localAutopilotPlugin)
       && availableAgents.includes('superpowers')
-      && autopilotCommand?.template === AUTOPILOT_COMMAND_TEMPLATE,
+      && autopilotCommand?.template === AUTOPILOT_COMMAND_TEMPLATE
+      && autopilotCommand?.agent === AUTOPILOT_COMMAND_CONFIG.agent,
     availableAgents,
   });
 }

@@ -475,6 +475,7 @@ test('readiness check script exits zero for an already-installed current config'
     command: {
       autopilot: {
         template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        agent: 'superpowers',
       },
     },
   }, null, 2));
@@ -555,6 +556,7 @@ test('bootstrap readiness requires local autopilot plugin membership in addition
     command: {
       autopilot: {
         template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        agent: 'superpowers',
       },
     },
   });
@@ -577,6 +579,38 @@ test('bootstrap readiness requires registered autopilot command discovery', () =
   assert.equal(result.autopilotInstalled, false);
   assert.equal(result.ready, false);
   assert.deepEqual(result.missing, ['autopilotMissing']);
+});
+
+test('bootstrap readiness rejects stale or misrouted autopilot commands', () => {
+  const baseConfig = {
+    plugin: [SUPERPOWERS_PLUGIN, LOCAL_AUTOPILOT_PLUGIN],
+    agent: Object.fromEntries(
+      MANAGED_AUTOPILOT_AGENT_IDS.map((id) => [id, { prompt: `${id}-prompt` }]),
+    ),
+  };
+  const staleTemplate = getReadinessFromConfig({
+    ...baseConfig,
+    command: {
+      autopilot: {
+        template: 'old template',
+        agent: 'superpowers',
+      },
+    },
+  });
+  const wrongAgent = getReadinessFromConfig({
+    ...baseConfig,
+    command: {
+      autopilot: {
+        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        agent: 'general',
+      },
+    },
+  });
+
+  assert.equal(staleTemplate.autopilotInstalled, false);
+  assert.equal(staleTemplate.ready, false);
+  assert.equal(wrongAgent.autopilotInstalled, false);
+  assert.equal(wrongAgent.ready, false);
 });
 
 test('bootstrap writes merged config and backup when not dry-run', async () => {
