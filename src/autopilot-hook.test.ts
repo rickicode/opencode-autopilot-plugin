@@ -17,16 +17,19 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 }
 
 async function run(): Promise<void> {
-  function createPromptCollector(): {
+  function createPromptCollector(options?: {
+    todos?: Array<{ id: string; content: string; status: string; priority: string }>;
+    messages?: Array<{ info?: { role?: string }; parts?: Array<{ type?: string; text?: string }> }>;
+  }): {
     prompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
     }>;
     ctx: PluginInput;
   } {
     const prompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
     }> = [];
 
     const ctx = {
@@ -34,10 +37,12 @@ async function run(): Promise<void> {
         session: {
           prompt: async (input: {
             path: { id: string };
-            body: { parts: CommandTextPart[] };
+            body: { noReply?: boolean; parts: CommandTextPart[] };
           }) => {
             prompts.push(input);
           },
+          todo: async () => ({ data: options?.todos ?? [] }),
+          messages: async () => ({ data: options?.messages ?? [] }),
         },
       },
     } as PluginInput;
@@ -48,11 +53,11 @@ async function run(): Promise<void> {
   function createDeferredPromptCollector(): {
     prompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
     }>;
     pendingPrompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
       resolve: () => void;
     }>;
     resolveNextPrompt: () => void;
@@ -60,11 +65,11 @@ async function run(): Promise<void> {
   } {
     const prompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
     }> = [];
     const pendingPrompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
       resolve: () => void;
     }> = [];
 
@@ -73,7 +78,7 @@ async function run(): Promise<void> {
         session: {
           prompt: async (input: {
             path: { id: string };
-            body: { parts: CommandTextPart[] };
+            body: { noReply?: boolean; parts: CommandTextPart[] };
           }) =>
             new Promise<void>((resolve) => {
               pendingPrompts.push({
@@ -84,6 +89,8 @@ async function run(): Promise<void> {
                 },
               });
             }),
+          todo: async () => ({ data: [] }),
+          messages: async () => ({ data: [] }),
         },
       },
     } as PluginInput;
@@ -105,14 +112,14 @@ async function run(): Promise<void> {
   function createFlakyPromptCollector(): {
     prompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
     }>;
     attempts: number;
     ctx: PluginInput;
   } {
     const prompts: Array<{
       path: { id: string };
-      body: { parts: CommandTextPart[] };
+      body: { noReply?: boolean; parts: CommandTextPart[] };
     }> = [];
     let attempts = 0;
 
@@ -121,7 +128,7 @@ async function run(): Promise<void> {
         session: {
           prompt: async (input: {
             path: { id: string };
-            body: { parts: CommandTextPart[] };
+            body: { noReply?: boolean; parts: CommandTextPart[] };
           }) => {
             attempts += 1;
             if (attempts === 1) {
@@ -129,6 +136,8 @@ async function run(): Promise<void> {
             }
             prompts.push(input);
           },
+          todo: async () => ({ data: [] }),
+          messages: async () => ({ data: [] }),
         },
       },
     } as PluginInput;
@@ -150,6 +159,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
 
   const nonAutopilotOutput: CommandOutput = {
@@ -276,6 +287,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 1,
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   const limitedStartOutput: CommandOutput = { parts: [] };
   await limitedHook.handleCommandExecuteBefore(
@@ -303,6 +316,8 @@ async function run(): Promise<void> {
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
     stopBeforeMerge: false,
+    questionDetection: false,
+    todoAware: false,
   });
   await completeHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-complete', arguments: '"ship feature"' },
@@ -335,6 +350,8 @@ async function run(): Promise<void> {
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
     stopBeforeMerge: true,
+    questionDetection: false,
+    todoAware: false,
   });
   await userDecisionHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-user-decision', arguments: '"ship feature"' },
@@ -365,6 +382,8 @@ async function run(): Promise<void> {
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
     stopBeforeMerge: true,
+    questionDetection: false,
+    todoAware: false,
   });
   await resumedWorkHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-resumed-work', arguments: '"ship feature"' },
@@ -399,6 +418,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 25,
+    questionDetection: false,
+    todoAware: false,
   });
   await timerHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-timer', arguments: '"build plugin"' },
@@ -436,6 +457,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await offRaceHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-off-race', arguments: '"build plugin"' },
@@ -458,6 +481,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 10,
+    questionDetection: false,
+    todoAware: false,
   });
   await startRaceHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-start-race', arguments: '"first task"' },
@@ -491,6 +516,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 1,
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await resumeHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-resume', arguments: '"resume test"' },
@@ -529,6 +556,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 5,
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await stalledHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stalled', arguments: '"refine flow"' },
@@ -591,6 +620,8 @@ async function run(): Promise<void> {
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
     stopOnError: true,
+    questionDetection: false,
+    todoAware: false,
   });
   await errorStopHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-error-stop', arguments: '"verify release"' },
@@ -622,6 +653,8 @@ async function run(): Promise<void> {
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
     stopOnError: false,
+    questionDetection: false,
+    todoAware: false,
   });
   await errorContinueHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-error-continue', arguments: '"verify release"' },
@@ -684,6 +717,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await staleStartHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stale-start', arguments: '"first task"' },
@@ -741,6 +776,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await staleOffHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stale-off', arguments: '"first task"' },
@@ -783,6 +820,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 5,
     cooldownMs: 10,
+    questionDetection: false,
+    todoAware: false,
   });
   await staleResumeHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stale-resume', arguments: '"resume task"' },
@@ -837,6 +876,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await overlapHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-overlap', arguments: '"overlap task"' },
@@ -866,6 +907,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await stalePendingTimerHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stale-pending-timer', arguments: '"first task"' },
@@ -913,6 +956,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await staleBusyHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stale-busy', arguments: '"busy race"' },
@@ -951,6 +996,8 @@ async function run(): Promise<void> {
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
     stopBeforeMerge: false,
+    questionDetection: false,
+    todoAware: false,
   });
   await staleCompleteHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stale-complete', arguments: '"complete race"' },
@@ -992,6 +1039,8 @@ async function run(): Promise<void> {
     maxLoopsPerPhase: 5,
     cooldownMs: 0,
     stopOnError: false,
+    questionDetection: false,
+    todoAware: false,
   });
   await staleErrorHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-stale-error', arguments: '"error race"' },
@@ -1031,6 +1080,8 @@ async function run(): Promise<void> {
     cooldownMs: 0,
     stopOnError: false,
     stopBeforeMerge: false,
+    questionDetection: false,
+    todoAware: false,
   });
   const startInstructionOutput: CommandOutput = { parts: [] };
   await startInstructionHook.handleCommandExecuteBefore(
@@ -1057,6 +1108,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await failedPromptHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-failed-prompt', arguments: '"recover prompt"' },
@@ -1087,6 +1140,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   const invalidToolExecuteOutput: CommandOutput = { parts: [] };
   await invalidToolExecuteHook.handleToolExecute(
@@ -1102,6 +1157,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   }) as unknown as Record<string, unknown>;
   assertEqual(
     normalHookWithoutTestControls.setReadinessForTest,
@@ -1138,6 +1195,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   readinessBlockedHook.setReadinessForTest({
     configReadable: false,
@@ -1176,6 +1235,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   autoStartBlockedHook.setReadinessForTest({
     configReadable: true,
@@ -1200,6 +1261,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   autoStartReadyHook.setReadinessForTest({
     configReadable: true,
@@ -1232,6 +1295,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 3,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await resumeBlockedHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-resume-blocked', arguments: '"resume blocked"' },
@@ -1310,6 +1375,8 @@ async function run(): Promise<void> {
     defaultMaxLoops: 5,
     maxLoopsPerPhase: 2,
     cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
   });
   await phaseResetHook.handleCommandExecuteBefore(
     { command: 'autopilot', sessionID: 'session-phase-reset', arguments: '"phase reset"' },
@@ -1342,6 +1409,315 @@ async function run(): Promise<void> {
   assert(
     !phaseResetScenario.prompts[2]?.body.parts[0]?.text?.includes('Autopilot stopped: reached max loops per phase'),
     'later idle after busy still continues instead of hitting a stale per-phase stop',
+  );
+
+  // =================================================================
+  // Feature: Countdown notification (noReply message before continue)
+  // =================================================================
+  const countdownScenario = createPromptCollector({
+    todos: [{ id: '1', content: 'build plugin', status: 'pending', priority: 'normal' }],
+  });
+  const countdownHook = createAutopilotHook(countdownScenario.ctx, {
+    defaultMaxLoops: 5,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: true,
+    todoAware: true,
+  });
+  await countdownHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-countdown', arguments: '"countdown test"' },
+    { parts: [] },
+  );
+  await countdownHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-countdown' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    countdownScenario.prompts.length,
+    2,
+    'sends countdown notification + continuation prompt when todoAware is enabled',
+  );
+  assert(
+    countdownScenario.prompts[0]?.body.noReply === true,
+    'countdown notification is sent as noReply',
+  );
+  assert(
+    countdownScenario.prompts[0]?.body.parts[0]?.text?.includes('⎔ Autopilot:'),
+    'countdown notification contains autopilot marker',
+  );
+  assert(
+    countdownScenario.prompts[0]?.body.parts[0]?.text?.includes('Esc×2 to cancel'),
+    'countdown notification mentions Esc×2 to cancel',
+  );
+  assert(
+    countdownScenario.prompts[1]?.body.parts[0]?.text?.includes('Continue using the previous recommendation:'),
+    'continuation prompt follows countdown notification',
+  );
+
+  // =================================================================
+  // Feature: Question detection (skip auto-continue if last msg is question)
+  // =================================================================
+  const questionScenario = createPromptCollector({
+    messages: [
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Would you like me to proceed with the implementation?' }] },
+    ],
+  });
+  const questionHook = createAutopilotHook(questionScenario.ctx, {
+    defaultMaxLoops: 5,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: true,
+    todoAware: false,
+  });
+  await questionHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-question', arguments: '"question test"' },
+    { parts: [] },
+  );
+  await questionHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-question' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    questionScenario.prompts.length,
+    0,
+    'skips auto-continue when last assistant message is a question',
+  );
+
+  const questionMarkScenario = createPromptCollector({
+    messages: [
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Should I deploy this to production?' }] },
+    ],
+  });
+  const questionMarkHook = createAutopilotHook(questionMarkScenario.ctx, {
+    defaultMaxLoops: 5,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: true,
+    todoAware: false,
+  });
+  await questionMarkHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-question-mark', arguments: '"question mark test"' },
+    { parts: [] },
+  );
+  await questionMarkHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-question-mark' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    questionMarkScenario.prompts.length,
+    0,
+    'skips auto-continue when last assistant message ends with question mark',
+  );
+
+  const nonQuestionScenario = createPromptCollector({
+    messages: [
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'I have completed the implementation and all tests pass.' }] },
+    ],
+  });
+  const nonQuestionHook = createAutopilotHook(nonQuestionScenario.ctx, {
+    defaultMaxLoops: 5,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: true,
+    todoAware: false,
+  });
+  await nonQuestionHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-non-question', arguments: '"non-question test"' },
+    { parts: [] },
+  );
+  await nonQuestionHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-non-question' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert(
+    nonQuestionScenario.prompts.length > 0,
+    'allows auto-continue when last assistant message is not a question',
+  );
+
+  // =================================================================
+  // Feature: Abort suppress window (suppress after Esc/abort)
+  // =================================================================
+  const abortScenario = createPromptCollector();
+  const abortHook = createAutopilotHook(abortScenario.ctx, {
+    defaultMaxLoops: 5,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+    suppressAfterAbortMs: 10000,
+  });
+  await abortHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-abort', arguments: '"abort test"' },
+    { parts: [] },
+  );
+  await abortHook.handleEvent({
+    event: {
+      type: 'session.error',
+      properties: {
+        sessionID: 'session-abort',
+        error: { name: 'MessageAbortedError' },
+      },
+    },
+  });
+  await abortHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-abort' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    abortScenario.prompts.length,
+    0,
+    'suppresses auto-continue after MessageAbortedError (Esc)',
+  );
+
+  const abortErrorScenario = createPromptCollector();
+  const abortErrorHook = createAutopilotHook(abortErrorScenario.ctx, {
+    defaultMaxLoops: 5,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+    suppressAfterAbortMs: 10000,
+  });
+  await abortErrorHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-abort-error', arguments: '"abort error test"' },
+    { parts: [] },
+  );
+  await abortErrorHook.handleEvent({
+    event: {
+      type: 'session.error',
+      properties: {
+        sessionID: 'session-abort-error',
+        error: { name: 'AbortError' },
+      },
+    },
+  });
+  await abortErrorHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-abort-error' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    abortErrorScenario.prompts.length,
+    0,
+    'suppresses auto-continue after AbortError (Ctrl+C)',
+  );
+
+  // =================================================================
+  // Feature: Max consecutive continuations limit
+  // =================================================================
+  const consecutiveScenario = createPromptCollector();
+  const consecutiveHook = createAutopilotHook(consecutiveScenario.ctx, {
+    defaultMaxLoops: 20,
+    maxLoopsPerPhase: 20,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+    maxConsecutiveContinuations: 2,
+  });
+  await consecutiveHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-consecutive', arguments: '"consecutive test"' },
+    { parts: [] },
+  );
+
+  await consecutiveHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-consecutive' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await consecutiveHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-consecutive' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await consecutiveHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-consecutive' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    consecutiveScenario.prompts.length,
+    2,
+    'stops auto-continue after reaching maxConsecutiveContinuations (2)',
+  );
+
+  // Verify that consecutive counter resets after user activity (busy)
+  const consecutiveResetScenario = createPromptCollector();
+  const consecutiveResetHook = createAutopilotHook(consecutiveResetScenario.ctx, {
+    defaultMaxLoops: 20,
+    maxLoopsPerPhase: 20,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+    maxConsecutiveContinuations: 1,
+  });
+  await consecutiveResetHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-consec-reset', arguments: '"consec reset test"' },
+    { parts: [] },
+  );
+
+  await consecutiveResetHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-consec-reset' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEqual(consecutiveResetScenario.prompts.length, 1, 'first continuation goes through');
+
+  await consecutiveResetHook.handleEvent({
+    event: {
+      type: 'session.status',
+      properties: { sessionID: 'session-consec-reset', status: { type: 'busy' } },
+    },
+  });
+
+  await consecutiveResetHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-consec-reset' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEqual(
+    consecutiveResetScenario.prompts.length,
+    2,
+    'busy resets consecutive counter so next idle continues',
+  );
+
+  // =================================================================
+  // Feature: Todo-aware continuation (check incomplete todos)
+  // =================================================================
+  const todoAwareScenario = createPromptCollector({
+    todos: [
+      { id: '1', content: 'Task 1', status: 'completed', priority: 'medium' },
+      { id: '2', content: 'Task 2', status: 'pending', priority: 'medium' },
+    ],
+  });
+  const todoAwareHook = createAutopilotHook(todoAwareScenario.ctx, {
+    defaultMaxLoops: 5,
+    maxLoopsPerPhase: 5,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: true,
+  });
+  await todoAwareHook.handleCommandExecuteBefore(
+    { command: 'autopilot', sessionID: 'session-todo', arguments: '"todo test"' },
+    { parts: [] },
+  );
+  await todoAwareHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-todo' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assertEqual(
+    todoAwareScenario.prompts.length,
+    2,
+    'sends countdown notification + continuation with incomplete todos',
+  );
+  assert(
+    todoAwareScenario.prompts[0]?.body.noReply === true,
+    'todo-aware countdown is noReply',
+  );
+  assert(
+    todoAwareScenario.prompts[0]?.body.parts[0]?.text?.includes('1 incomplete todo remaining'),
+    'countdown notification shows correct incomplete todo count',
   );
 }
 

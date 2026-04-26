@@ -10,7 +10,7 @@ function assert(condition: unknown, message: string): void {
 async function run(): Promise<void> {
   const prompts: Array<{
     path: { id: string };
-    body: { parts: Array<{ type: string; text?: string }> };
+    body: { noReply?: boolean; parts: Array<{ type: string; text?: string }> };
   }> = [];
 
   const ctx = {
@@ -20,16 +20,20 @@ async function run(): Promise<void> {
         defaultMaxLoops: 7,
         maxLoopsPerPhase: 5,
         cooldownMs: 0,
+        questionDetection: false,
+        todoAware: false,
       },
     },
     client: {
       session: {
         prompt: async (input: {
           path: { id: string };
-          body: { parts: Array<{ type: string; text?: string }> };
+          body: { noReply?: boolean; parts: Array<{ type: string; text?: string }> };
         }) => {
           prompts.push(input);
         },
+        todo: async () => ({ data: [] }),
+        messages: async () => ({ data: [] }),
       },
     },
   } as PluginInput & {
@@ -38,6 +42,8 @@ async function run(): Promise<void> {
         defaultMaxLoops?: number;
         maxLoopsPerPhase?: number;
         cooldownMs?: number;
+        questionDetection?: boolean;
+        todoAware?: boolean;
       };
     };
   };
@@ -155,6 +161,8 @@ async function run(): Promise<void> {
         prompt: async () => {
           // noop for test
         },
+        todo: async () => ({ data: [] }),
+        messages: async () => ({ data: [] }),
       },
     },
   } as PluginInput;

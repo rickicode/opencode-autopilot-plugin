@@ -89,6 +89,10 @@ const state: AutopilotState = {
   stagnationCount: 0,
   lastObservedOutcome: 'progress',
   lastPromptKind: 'continue',
+  consecutiveContinuations: 0,
+  suppressUntil: 0,
+  isAutoInjecting: false,
+  isNotifying: false,
 };
 
 const input: CommandInput = {
@@ -118,7 +122,7 @@ void invalidOutputWrongType;
 if (
   config.defaultMaxLoops !== 10 ||
   config.maxLoopsPerPhase !== 5 ||
-  config.cooldownMs !== 2000 ||
+  config.cooldownMs !== 3000 ||
   config.stopOnError !== true ||
   config.stopBeforeMerge !== true ||
   !state.enabled ||
