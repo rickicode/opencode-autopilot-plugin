@@ -177,7 +177,7 @@ test('merge registers /autopilot command in OpenCode config for slash discovery'
   assert.deepEqual(merged.conflicts, []);
   assert.equal(
     merged.config.command.autopilot.template,
-    'Call the autopilot tool with raw=$ARGUMENTS',
+    '$ARGUMENTS',
   );
   assert.equal(merged.config.command.autopilot.agent, 'superpowers');
   assert.match(merged.config.command.autopilot.description, /\/autopilot/);
@@ -197,7 +197,7 @@ test('merge overrides stale autopilot command values but preserves user metadata
   assert.deepEqual(merged.conflicts, []);
   assert.equal(
     merged.config.command.autopilot.template,
-    'Call the autopilot tool with raw=$ARGUMENTS',
+    '$ARGUMENTS',
   );
   assert.equal(merged.config.command.autopilot.agent, 'superpowers');
   assert.equal(merged.config.command.autopilot.model, 'anthropic/custom');
@@ -481,7 +481,7 @@ test('readiness check script exits zero for an already-installed current config'
     ),
     command: {
       autopilot: {
-        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        template: '$ARGUMENTS',
         agent: 'superpowers',
       },
     },
@@ -518,7 +518,7 @@ test('bootstrap readiness requires installed autopilot command markdown file', (
     ),
     command: {
       autopilot: {
-        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        template: '$ARGUMENTS',
         agent: 'superpowers',
       },
     },
@@ -600,7 +600,7 @@ test('bootstrap readiness requires local autopilot plugin membership in addition
     },
     command: {
       autopilot: {
-        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        template: '$ARGUMENTS',
         agent: 'superpowers',
       },
     },
@@ -646,7 +646,7 @@ test('bootstrap readiness rejects stale or misrouted autopilot commands', () => 
     ...baseConfig,
     command: {
       autopilot: {
-        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+        template: '$ARGUMENTS',
         agent: 'general',
       },
     },
@@ -688,7 +688,7 @@ test('bootstrap writes merged config and backup when not dry-run', async () => {
   assert.equal(writtenConfig.default_agent, 'superpowers');
   assert.equal(
     writtenConfig.command.autopilot.template,
-    'Call the autopilot tool with raw=$ARGUMENTS',
+    '$ARGUMENTS',
   );
   assert.equal(writtenConfig.command.autopilot.agent, 'superpowers');
   for (const id of MANAGED_AUTOPILOT_AGENT_IDS) {
@@ -713,7 +713,7 @@ test('bootstrap installs a project command file for slash-command discovery', as
   const commandFile = readFileSync(commandPath, 'utf8');
   assert.match(commandFile, /^---\ndescription:/);
   assert.match(commandFile, /\nagent: superpowers\n/);
-  assert.match(commandFile, /\n---\nCall the autopilot tool with raw=\$ARGUMENTS\s*$/);
+  assert.match(commandFile, /\n---\n\$ARGUMENTS\s*$/);
   assert.equal(result.readiness.ready, true);
 });
 

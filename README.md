@@ -100,22 +100,31 @@ inline notification and injects continuations immediately.
 ### Start Autopilot
 
 ```bash
-/autopilot "add user authentication with JWT"
+/autopilot add user authentication with JWT
 ```
 
-Starts autopilot with the default loop budget and shows an inline active banner.
+Starts autopilot with the default loop budget (7) and shows an inline active banner.
+
+Quotes around the task are optional — both forms are accepted:
+
+```bash
+/autopilot "add user authentication with JWT"
+/autopilot add user authentication with JWT
+```
+
+A bare `/autopilot` with no arguments enables autopilot in standby — the next idle event triggers the standard continuation prompt up to the configured loop budget. This mirrors the toggle behavior of `/auto-continue` in `oh-my-opencode-slim`.
 
 The activation output includes a visible `AUTOPILOT ACTIVE` banner before the normal startup guidance.
 
 ### Set Loop Budget
 
-Supported form:
-
 ```bash
+/autopilot --loops 15 refactor database layer
 /autopilot --loops 15 "refactor database layer"
+/autopilot --loops 15
 ```
 
-`--loops` must appear before the quoted task and must be a positive integer.
+`--loops` must appear before the task (if any) and must be a positive integer. Without a task, the loop budget is applied to the next standby/auto-engage cycle.
 
 ### Status
 
@@ -151,7 +160,7 @@ This replaces the stored loop budget for the resumed run.
 
 ## Parsing Rules
 
-Control words are only treated as controls when unquoted:
+Control words are only treated as controls when they are the entire argument:
 
 - `/autopilot off` stops autopilot
 - `/autopilot resume` resumes autopilot
@@ -166,24 +175,7 @@ Quoted control words are treated as task text:
 /autopilot --loops 5 "off"
 ```
 
-Malformed quotes are rejected as usage errors instead of triggering control actions:
-
-```bash
-/autopilot "off
-/autopilot off"
-/autopilot "resume'
-/autopilot status" --loops 5
-```
-
-Malformed loop flags are also rejected:
-
-```bash
-/autopilot --loops 5
-/autopilot --loops 0 "task"
-/autopilot --loops abc create x
-/autopilot "refactor database layer" --loops 15
-/autopilot create x --loops nope
-```
+The task argument can be quoted or unquoted; surrounding double or single quotes are stripped automatically. `--loops N` must appear before the task and `N` must be a positive integer — values like `--loops 0` or `--loops abc` are rejected.
 
 ## Safety Behavior
 
