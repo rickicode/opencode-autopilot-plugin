@@ -164,6 +164,49 @@ test('merge provisions managed delegated agents with opencode-compatible subagen
   assert.ok(merged.config.plugin.includes(LOCAL_AUTOPILOT_PLUGIN));
 });
 
+test('merge registers /autopilot command in OpenCode config for slash discovery', () => {
+  const merged = mergeOpenCodeConfig({
+    plugin: ['custom-plugin'],
+  });
+
+  assert.deepEqual(merged.conflicts, []);
+  assert.equal(
+    merged.config.command.autopilot.template,
+    'Call the autopilot tool with raw=$ARGUMENTS',
+  );
+  assert.equal(merged.config.command.autopilot.agent, 'superpowers');
+  assert.match(merged.config.command.autopilot.description, /\/autopilot/);
+});
+
+test('merge overrides stale autopilot command values but preserves user metadata', () => {
+  const merged = mergeOpenCodeConfig({
+    command: {
+      autopilot: {
+        template: 'old template',
+        description: 'old description',
+        model: 'anthropic/custom',
+      },
+    },
+  });
+
+  assert.deepEqual(merged.conflicts, []);
+  assert.equal(
+    merged.config.command.autopilot.template,
+    'Call the autopilot tool with raw=$ARGUMENTS',
+  );
+  assert.equal(merged.config.command.autopilot.agent, 'superpowers');
+  assert.equal(merged.config.command.autopilot.model, 'anthropic/custom');
+});
+
+test('merge reports non-object command registry conflicts', () => {
+  const merged = mergeOpenCodeConfig({
+    command: 'invalid',
+  });
+
+  assert.equal(merged.config.command, 'invalid');
+  assert.deepEqual(merged.conflicts, ['command']);
+});
+
 test('merge preserves nested metadata for autopilot-owned managed agents', () => {
   const merged = mergeOpenCodeConfig({
     agent: {
@@ -429,6 +472,11 @@ test('readiness check script exits zero for an already-installed current config'
     agent: Object.fromEntries(
       MANAGED_AUTOPILOT_AGENT_IDS.map((id) => [id, { prompt: `${id}-prompt` }]),
     ),
+    command: {
+      autopilot: {
+        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+      },
+    },
   }, null, 2));
 
   const result = spawnSync(getNpmCommand(), ['run', 'readiness:check', '--silent'], {
@@ -504,6 +552,25 @@ test('bootstrap readiness requires local autopilot plugin membership in addition
       'superpowers-designer': { prompt: 'managed' },
       'superpowers-reviewer': { prompt: 'managed' },
     },
+    command: {
+      autopilot: {
+        template: 'Call the autopilot tool with raw=$ARGUMENTS',
+      },
+    },
+  });
+
+  assert.equal(result.superpowersDeclared, true);
+  assert.equal(result.autopilotInstalled, false);
+  assert.equal(result.ready, false);
+  assert.deepEqual(result.missing, ['autopilotMissing']);
+});
+
+test('bootstrap readiness requires registered autopilot command discovery', () => {
+  const result = getReadinessFromConfig({
+    plugin: [SUPERPOWERS_PLUGIN, LOCAL_AUTOPILOT_PLUGIN],
+    agent: Object.fromEntries(
+      MANAGED_AUTOPILOT_AGENT_IDS.map((id) => [id, { prompt: `${id}-prompt` }]),
+    ),
   });
 
   assert.equal(result.superpowersDeclared, true);
@@ -530,6 +597,7 @@ test('bootstrap writes merged config and backup when not dry-run', async () => {
   const writtenConfig = JSON.parse(readFileSync(configPath, 'utf8')) as {
     plugin: string[];
     agent: Record<string, { prompt?: string; metadata?: { owner?: string } }>;
+    command: Record<string, { template?: string; agent?: string }>;
     default_agent?: string;
   };
 
@@ -539,6 +607,11 @@ test('bootstrap writes merged config and backup when not dry-run', async () => {
   assert.ok(writtenConfig.plugin.includes(LOCAL_AUTOPILOT_PLUGIN));
   assert.equal(writtenConfig.agent.existing.prompt, 'keep-me');
   assert.equal(writtenConfig.default_agent, 'superpowers');
+  assert.equal(
+    writtenConfig.command.autopilot.template,
+    'Call the autopilot tool with raw=$ARGUMENTS',
+  );
+  assert.equal(writtenConfig.command.autopilot.agent, 'superpowers');
   for (const id of MANAGED_AUTOPILOT_AGENT_IDS) {
     assert.equal(writtenConfig.agent[id].metadata?.owner, 'autopilot');
   }
@@ -560,6 +633,7 @@ test('bootstrap installs a project command file for slash-command discovery', as
 
   const commandFile = readFileSync(commandPath, 'utf8');
   assert.match(commandFile, /^---\ndescription:/);
+  assert.match(commandFile, /\nagent: superpowers\n/);
   assert.match(commandFile, /\n---\nCall the autopilot tool with raw=\$ARGUMENTS\s*$/);
   assert.equal(result.readiness.ready, true);
 });

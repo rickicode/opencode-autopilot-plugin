@@ -2,11 +2,7 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { createAutopilotHook } from './autopilot-hook';
 import type { AutopilotConfig, AutopilotHook, CommandOutput } from './types';
 import { buildSubagentConfigs, buildSuperpowersConfig } from './subagents';
-
-const AUTOPILOT_COMMAND = {
-  template: 'Call the autopilot tool with raw=$ARGUMENTS',
-  description: 'Run the /autopilot slash command for autonomous task execution',
-};
+import { AUTOPILOT_COMMAND_CONFIG } from './command-config';
 
 const AutopilotPlugin: Plugin = async (ctx) => {
   const userConfig = (ctx.config?.autopilot ?? {}) as Partial<AutopilotConfig>;
@@ -74,7 +70,7 @@ const AutopilotPlugin: Plugin = async (ctx) => {
     agent: agents,
 
     command: {
-      autopilot: AUTOPILOT_COMMAND,
+      autopilot: AUTOPILOT_COMMAND_CONFIG,
     },
 
     tool: {
@@ -125,7 +121,7 @@ const AutopilotPlugin: Plugin = async (ctx) => {
 
       commandRegistry.autopilot = {
         ...existingAutopilotCommand,
-        ...AUTOPILOT_COMMAND,
+        ...AUTOPILOT_COMMAND_CONFIG,
       };
 
       opencodeConfig.command = commandRegistry;
