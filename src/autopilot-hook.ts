@@ -21,6 +21,9 @@ import {
   formatStatus,
   buildOrchestratorStartupGuidance,
   buildOrchestratorContinuationGuidance,
+  isQuestion,
+  countIncompleteTodos,
+  buildCountdownNotification,
 } from './utils';
 import { AUTOPILOT_AGENT_IDS } from './agent-manifest';
 
@@ -279,6 +282,10 @@ function createAutopilotHookInternal(
         stagnationCount: 0,
         lastObservedOutcome: 'progress',
         lastPromptKind: null,
+        consecutiveContinuations: 0,
+        suppressUntil: 0,
+        isAutoInjecting: false,
+        isNotifying: false,
       });
     }
 
@@ -387,6 +394,8 @@ function createAutopilotHookInternal(
         state.enabled = true;
         state.stagnationCount = 0;
         state.lastObservedOutcome = 'progress';
+        state.consecutiveContinuations = 0;
+        state.suppressUntil = 0;
         restoreAutoProceedRecommendation(state);
         state.lastPromptKind = 'resume';
         output.parts.push(
@@ -430,6 +439,10 @@ function createAutopilotHookInternal(
         state.stagnationCount = 0;
         state.lastObservedOutcome = 'progress';
         state.lastPromptKind = 'start';
+        state.consecutiveContinuations = 0;
+        state.suppressUntil = 0;
+        state.isAutoInjecting = false;
+        state.isNotifying = false;
 
         output.parts.push(
           createInternalPrompt(
@@ -482,13 +495,100 @@ function createAutopilotHookInternal(
     );
   }
 
+  async function checkQuestionGate(sessionID: string): Promise<boolean> {
+    if (!config.questionDetection) {
+      return false;
+    }
+    try {
+      const messagesResult = await ctx.client.session.messages({
+        path: { id: sessionID },
+      });
+      const messages = messagesResult.data;
+      const lastAssistantMessage = messages
+        .slice()
+        .reverse()
+        .find((m) => m.info?.role === 'assistant');
+      if (lastAssistantMessage?.parts) {
+        const lastText = lastAssistantMessage.parts
+          .map((p) => p.text ?? '')
+          .join(' ');
+        return isQuestion(lastText);
+      }
+    } catch {
+      // graceful degradation: skip gate if API unavailable
+    }
+    return false;
+  }
+
+  async function checkTodoGate(
+    sessionID: string,
+  ): Promise<{ hasIncomplete: boolean; incompleteCount: number }> {
+    if (!config.todoAware) {
+      return { hasIncomplete: true, incompleteCount: 0 };
+    }
+    try {
+      const todosResult = await ctx.client.session.todo({
+        path: { id: sessionID },
+      });
+      const incompleteCount = countIncompleteTodos(todosResult.data);
+      return { hasIncomplete: incompleteCount > 0, incompleteCount };
+    } catch {
+      // graceful degradation: skip gate if API unavailable
+      return { hasIncomplete: true, incompleteCount: 0 };
+    }
+  }
+
+  async function sendCountdownNotification(
+    sessionID: string,
+    incompleteCount: number,
+  ): Promise<void> {
+    const state = sessions.get(sessionID);
+    if (state) {
+      state.isNotifying = true;
+    }
+    try {
+      await ctx.client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          noReply: true,
+          parts: [
+            {
+              type: 'text',
+              text: buildCountdownNotification(
+                incompleteCount,
+                config.cooldownMs / 1000,
+              ),
+            },
+          ],
+        },
+      });
+    } catch {
+      // best-effort notification
+    } finally {
+      if (state) {
+        state.isNotifying = false;
+      }
+    }
+  }
+
   async function handleSessionIdle(sessionID: string): Promise<void> {
     const state = sessions.get(sessionID);
     if (!state || !state.enabled) {
       return;
     }
 
-    if (state.pendingTimer) {
+    // Safety gate: no pending timer or injection in flight
+    if (state.pendingTimer || state.isAutoInjecting) {
+      return;
+    }
+
+    // Safety gate: not in abort suppress window
+    if (Date.now() < state.suppressUntil) {
+      return;
+    }
+
+    // Safety gate: max consecutive continuations
+    if (state.consecutiveContinuations >= config.maxConsecutiveContinuations) {
       return;
     }
 
@@ -508,6 +608,21 @@ function createAutopilotHookInternal(
       return;
     }
 
+    // Safety gate: question detection
+    const isLastMessageQuestion = await checkQuestionGate(sessionID);
+    if (isLastMessageQuestion) {
+      return;
+    }
+
+    // Safety gate: todo-aware continuation
+    const { hasIncomplete, incompleteCount } =
+      await checkTodoGate(sessionID);
+
+    // Send countdown notification before scheduling continuation
+    if (config.todoAware || config.questionDetection) {
+      await sendCountdownNotification(sessionID, incompleteCount);
+    }
+
     const pendingTimer = setTimeout(async () => {
       try {
         if (
@@ -515,6 +630,11 @@ function createAutopilotHookInternal(
           !state.enabled ||
           getRunVersion(sessionID) !== runVersion
         ) {
+          return;
+        }
+
+        // Re-check suppress window in case user pressed Esc during cooldown
+        if (Date.now() < state.suppressUntil) {
           return;
         }
 
@@ -528,16 +648,22 @@ function createAutopilotHookInternal(
           ? state.currentLoop + 1
           : state.currentLoop;
 
-        await ctx.client.session.prompt({
-          path: { id: sessionID },
-          body: {
-            parts: [
-              createInternalPrompt(
-                buildContinuationPrompt(state, currentAssessment, nextLoop),
-              ),
-            ],
-          },
-        });
+        state.isAutoInjecting = true;
+        try {
+          await ctx.client.session.prompt({
+            path: { id: sessionID },
+            body: {
+              parts: [
+                createInternalPrompt(
+                  buildContinuationPrompt(state, currentAssessment, nextLoop),
+                ),
+              ],
+            },
+          });
+          state.consecutiveContinuations++;
+        } finally {
+          state.isAutoInjecting = false;
+        }
 
         if (
           sessions.get(sessionID) !== state ||
@@ -594,6 +720,23 @@ function createAutopilotHookInternal(
       if (sessionID) {
         resetState(sessionID);
       }
+    } else if (event.type === 'session.error') {
+      const sessionID = event.properties?.sessionID as string;
+      const error = event.properties?.error as { name?: string } | undefined;
+      const errorName = error?.name;
+      if (sessionID) {
+        const state = sessions.get(sessionID);
+        if (state) {
+          // Abort suppress window: after Esc/Ctrl+C, suppress auto-continue
+          if (
+            errorName === 'MessageAbortedError' ||
+            errorName === 'AbortError'
+          ) {
+            state.suppressUntil = Date.now() + config.suppressAfterAbortMs;
+          }
+          cancelPendingTimer(state);
+        }
+      }
     } else if (event.type === 'session.status') {
       const sessionID = event.properties?.sessionID as string;
       const status = event.properties?.status as { type: string };
@@ -602,8 +745,18 @@ function createAutopilotHookInternal(
       } else if (sessionID && status?.type === 'busy') {
         const state = sessions.get(sessionID);
         if (state) {
+          // Always bump run version and cancel timers for safety
           bumpRunVersion(sessionID);
           cancelPendingTimer(state);
+          // Reset consecutive counter only on user-initiated activity
+          // (not our own auto-injection or countdown notification)
+          if (
+            !state.isAutoInjecting &&
+            !state.isNotifying &&
+            state.consecutiveContinuations > 0
+          ) {
+            state.consecutiveContinuations = 0;
+          }
           if (state.currentPhase === 'complete') {
             state.currentPhase = 'execute';
           }

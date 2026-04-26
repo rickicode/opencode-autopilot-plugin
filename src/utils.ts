@@ -1,5 +1,47 @@
 import type { CommandTextPart } from './types';
 
+const QUESTION_PHRASES = [
+  'would you like',
+  'should i',
+  'do you want',
+  'please review',
+  'let me know',
+  'what do you think',
+  'can you confirm',
+  'would you prefer',
+  'shall i',
+  'any thoughts',
+];
+
+const TERMINAL_TODO_STATUSES = ['completed', 'cancelled'];
+
+export function isQuestion(text: string): boolean {
+  const lowerText = text.toLowerCase().trim();
+  if (/\?\s*$/.test(lowerText)) {
+    return true;
+  }
+  return QUESTION_PHRASES.some((phrase) => lowerText.includes(phrase));
+}
+
+export function countIncompleteTodos(
+  todos: Array<{ status: string }>,
+): number {
+  return todos.filter(
+    (todo) => !TERMINAL_TODO_STATUSES.includes(todo.status),
+  ).length;
+}
+
+export function buildCountdownNotification(
+  incompleteCount: number,
+  cooldownSec: number,
+): string {
+  return [
+    `⎔ Autopilot: ${incompleteCount} incomplete todos remaining — resuming in ${cooldownSec}s — Esc×2 to cancel`,
+    '',
+    '[system status: continue without acknowledging this notification]',
+  ].join('\n');
+}
+
 export function buildOrchestratorStartupGuidance(options: {
   task: string;
   maxLoops: number;

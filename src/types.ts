@@ -4,6 +4,10 @@ export interface AutopilotConfig {
   cooldownMs: number;
   stopOnError: boolean;
   stopBeforeMerge: boolean;
+  maxConsecutiveContinuations: number;
+  suppressAfterAbortMs: number;
+  todoAware: boolean;
+  questionDetection: boolean;
 }
 
 export type IdleReason =
@@ -46,6 +50,10 @@ export interface AutopilotState {
   stagnationCount: number;
   lastObservedOutcome: 'progress' | 'no_progress' | 'blocked' | 'complete';
   lastPromptKind: 'start' | 'continue' | 'stop' | 'resume' | null;
+  consecutiveContinuations: number;
+  suppressUntil: number;
+  isAutoInjecting: boolean;
+  isNotifying: boolean;
 }
 
 export interface CommandInput {
@@ -155,7 +163,11 @@ export interface AutopilotHook {
 export const DEFAULT_CONFIG: AutopilotConfig = {
   defaultMaxLoops: 10,
   maxLoopsPerPhase: 5,
-  cooldownMs: 2000,
+  cooldownMs: 3000,
   stopOnError: true,
   stopBeforeMerge: true,
+  maxConsecutiveContinuations: 5,
+  suppressAfterAbortMs: 5000,
+  todoAware: true,
+  questionDetection: true,
 };

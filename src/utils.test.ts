@@ -1,4 +1,11 @@
-import { createInternalPrompt, formatStatus, parseAutopilotCommand } from './utils';
+import {
+  createInternalPrompt,
+  formatStatus,
+  parseAutopilotCommand,
+  isQuestion,
+  countIncompleteTodos,
+  buildCountdownNotification,
+} from './utils';
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -81,3 +88,49 @@ assertEqual(
   ].join('\n'),
   'formats enabled status',
 );
+
+// isQuestion tests
+function assert(condition: unknown, message: string): void {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+assert(isQuestion('Would you like me to proceed?'), 'detects trailing question mark');
+assert(isQuestion('Should I deploy this?  '), 'detects question mark with trailing whitespace');
+assert(isQuestion('would you like to review this'), 'detects question phrase: would you like');
+assert(isQuestion('Should I continue?'), 'detects question phrase: should i');
+assert(isQuestion('Do you want me to fix this?'), 'detects question phrase: do you want');
+assert(isQuestion('Let me know if you have questions'), 'detects question phrase: let me know');
+assert(isQuestion('SHALL I proceed'), 'detects question phrase case-insensitively');
+assert(!isQuestion('I have completed the task.'), 'does not flag statements');
+assert(!isQuestion('All tests pass successfully'), 'does not flag success messages');
+assert(!isQuestion(''), 'does not flag empty string');
+
+// countIncompleteTodos tests
+assertEqual(
+  countIncompleteTodos([
+    { status: 'completed' },
+    { status: 'pending' },
+    { status: 'in_progress' },
+    { status: 'cancelled' },
+  ]),
+  2,
+  'counts non-terminal todos as incomplete',
+);
+assertEqual(
+  countIncompleteTodos([
+    { status: 'completed' },
+    { status: 'cancelled' },
+  ]),
+  0,
+  'returns 0 when all todos are terminal',
+);
+assertEqual(countIncompleteTodos([]), 0, 'returns 0 for empty array');
+
+// buildCountdownNotification tests
+const notification = buildCountdownNotification(3, 3);
+assert(notification.includes('⎔ Autopilot:'), 'notification contains autopilot marker');
+assert(notification.includes('3 incomplete todos remaining'), 'notification shows todo count');
+assert(notification.includes('3s'), 'notification shows cooldown seconds');
+assert(notification.includes('Esc×2 to cancel'), 'notification mentions escape to cancel');

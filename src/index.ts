@@ -16,7 +16,8 @@ const AutopilotPlugin: Plugin = async (ctx) => {
       task: tool.schema.string(),
       maxLoops: tool.schema.number().optional(),
     },
-    execute: async (args: { task: string; maxLoops?: number }) => {
+    execute: async (args: Record<string, unknown>) => {
+      const typedArgs = args as { task: string; maxLoops?: number };
       // Get current session ID from context
       const sessionID = (ctx as { sessionID?: string }).sessionID;
       if (!sessionID) {
@@ -24,8 +25,8 @@ const AutopilotPlugin: Plugin = async (ctx) => {
       }
 
       if (
-        args.maxLoops !== undefined &&
-        (!Number.isInteger(args.maxLoops) || args.maxLoops <= 0)
+        typedArgs.maxLoops !== undefined &&
+        (!Number.isInteger(typedArgs.maxLoops) || typedArgs.maxLoops <= 0)
       ) {
         throw new Error('Autopilot maxLoops must be a positive integer');
       }
@@ -33,7 +34,7 @@ const AutopilotPlugin: Plugin = async (ctx) => {
       // Call hook handler directly with structured tool args
       const output: CommandOutput = { parts: [] };
       await hook.handleToolExecute(
-        { sessionID, task: args.task, maxLoops: args.maxLoops },
+        { sessionID, task: typedArgs.task, maxLoops: typedArgs.maxLoops },
         output,
       );
       
