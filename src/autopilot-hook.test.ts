@@ -737,7 +737,14 @@ async function run(): Promise<void> {
   });
   await new Promise((resolve) => setTimeout(resolve, 40));
 
-  assertEqual(timerPrompts.length, 0, 'busy cancels the only pending continuation prompt');
+  const timerContinuationPrompts = timerPrompts.filter(
+    (p) => p.body.noReply !== true,
+  );
+  assertEqual(
+    timerContinuationPrompts.length,
+    0,
+    'busy cancels the only pending continuation prompt',
+  );
 
   const timerStatusOutput: CommandOutput = { parts: [] };
   await timerHook.handleCommandExecuteBefore(
@@ -795,7 +802,14 @@ async function run(): Promise<void> {
   );
   await new Promise((resolve) => setTimeout(resolve, 25));
 
-  assertEqual(startRacePrompts.length, 0, 'starting a new task cancels any pending timer from the previous run');
+  const startRaceContinuationPrompts = startRacePrompts.filter(
+    (p) => p.body.noReply !== true,
+  );
+  assertEqual(
+    startRaceContinuationPrompts.length,
+    0,
+    'starting a new task cancels any pending timer from the previous run',
+  );
 
   const startRaceStatusOutput: CommandOutput = { parts: [] };
   await startRaceHook.handleCommandExecuteBefore(
@@ -2326,6 +2340,128 @@ async function run(): Promise<void> {
     todoAwareScenario.prompts[0]?.body.parts[0]?.text?.includes('1 incomplete todo remaining'),
     'countdown notification shows correct incomplete todo count',
   );
+
+  // =================================================================
+  // Feature: Auto-engage from Superpowers chat.message + idle
+  // =================================================================
+  const autoEngageScenario = createPromptCollector({
+    messages: [
+      {
+        info: { role: 'user' },
+        parts: [{ type: 'text', text: 'ship the auth feature' }],
+      },
+    ],
+  });
+  const autoEngageHook = createAutopilotHook(autoEngageScenario.ctx, {
+    defaultMaxLoops: 7,
+    maxLoopsPerPhase: 7,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+    autoEnable: true,
+  });
+  // Simulate that the host runtime told us superpowers is the active agent
+  autoEngageHook.handleChatMessage({
+    sessionID: 'session-auto-engage',
+    agent: 'superpowers',
+  });
+  // Without ever invoking /autopilot, the session goes idle after Superpowers
+  // produced a response — autopilot should auto-engage and inject a
+  // continuation prompt without the user having to type /autopilot.
+  await autoEngageHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-auto-engage' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const autoEngageContinuationPrompts = autoEngageScenario.prompts.filter(
+    (p) => p.body.noReply !== true,
+  );
+  assert(
+    autoEngageContinuationPrompts.length >= 1,
+    'auto-engage injects a continuation prompt on Superpowers idle without /autopilot',
+  );
+  assert(
+    autoEngageContinuationPrompts[0]?.body.parts[0]?.text?.includes(
+      '[AUTOPILOT-INTERNAL]',
+    ),
+    'auto-engage continuation is marked as autopilot-internal',
+  );
+
+  // Auto-engage should be skipped entirely when autoEnable is disabled.
+  const autoDisabledScenario = createPromptCollector({
+    messages: [
+      {
+        info: { role: 'user' },
+        parts: [{ type: 'text', text: 'ship the auth feature' }],
+      },
+    ],
+  });
+  const autoDisabledHook = createAutopilotHook(autoDisabledScenario.ctx, {
+    defaultMaxLoops: 7,
+    maxLoopsPerPhase: 7,
+    cooldownMs: 0,
+    questionDetection: false,
+    todoAware: false,
+    autoEnable: false,
+  });
+  autoDisabledHook.handleChatMessage({
+    sessionID: 'session-auto-disabled',
+    agent: 'superpowers',
+  });
+  await autoDisabledHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-auto-disabled' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEqual(
+    autoDisabledScenario.prompts.length,
+    0,
+    'auto-engage stays off when autoEnable is disabled',
+  );
+
+  // After auto-engage, default loop budget is 7 unless overridden.
+  const autoEngageLoopBudgetScenario = createPromptCollector({
+    messages: [
+      {
+        info: { role: 'user' },
+        parts: [{ type: 'text', text: 'ship the auth feature' }],
+      },
+    ],
+  });
+  const autoEngageLoopBudgetHook = createAutopilotHook(
+    autoEngageLoopBudgetScenario.ctx,
+    {
+      defaultMaxLoops: 7,
+      maxLoopsPerPhase: 7,
+      cooldownMs: 0,
+      questionDetection: false,
+      todoAware: false,
+      autoEnable: true,
+    },
+  );
+  autoEngageLoopBudgetHook.handleChatMessage({
+    sessionID: 'session-auto-budget',
+    agent: 'superpowers',
+  });
+  await autoEngageLoopBudgetHook.handleEvent({
+    event: { type: 'session.idle', properties: { sessionID: 'session-auto-budget' } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const autoEngageBudgetStatusOutput: CommandOutput = { parts: [] };
+  await autoEngageLoopBudgetHook.handleCommandExecuteBefore(
+    {
+      command: 'autopilot',
+      sessionID: 'session-auto-budget',
+      arguments: 'status',
+    },
+    autoEngageBudgetStatusOutput,
+  );
+  assert(
+    autoEngageBudgetStatusOutput.parts[0]?.text?.includes('Progress: 1/7 loops'),
+    'auto-engaged session uses default 7-loop budget',
+  );
 }
 
-void run();
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

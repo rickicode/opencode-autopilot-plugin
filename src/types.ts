@@ -8,6 +8,7 @@ export interface AutopilotConfig {
   suppressAfterAbortMs: number;
   todoAware: boolean;
   questionDetection: boolean;
+  autoEnable: boolean;
 }
 
 export type IdleReason =
@@ -178,6 +179,11 @@ export interface ParsedPlanDocument {
   tasks: ParsedPlanTask[];
 }
 
+export interface ChatMessageInput {
+  sessionID: string;
+  agent?: string;
+}
+
 export interface AutopilotHook {
   handleCommandExecuteBefore: (
     input: CommandInput,
@@ -190,6 +196,7 @@ export interface AutopilotHook {
   handleEvent: (input: {
     event: { type: string; properties?: Record<string, unknown> };
   }) => Promise<void>;
+  handleChatMessage: (input: ChatMessageInput) => void;
 }
 
 export const DEFAULT_CONFIG: AutopilotConfig = {
@@ -200,6 +207,7 @@ export const DEFAULT_CONFIG: AutopilotConfig = {
   stopBeforeMerge: true,
   maxConsecutiveContinuations: 7,
   suppressAfterAbortMs: 5000,
-  todoAware: true,
-  questionDetection: true,
+  todoAware: false,
+  questionDetection: false,
+  autoEnable: true,
 };

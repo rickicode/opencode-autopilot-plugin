@@ -4,6 +4,7 @@ import type {
   AutopilotHook,
   IdleAssessment,
   AutopilotState,
+  ChatMessageInput,
   CommandInput,
   CommandOutput,
   ExecutionTriggerInput,
@@ -28,7 +29,9 @@ import {
   readSuperpowersArtifacts,
   buildAutopilotActiveBanner,
 } from './utils';
-import { AUTOPILOT_AGENT_IDS } from './agent-manifest';
+import { AUTOPILOT_AGENT_IDS, AUTOPILOT_AGENT_MANIFEST } from './agent-manifest';
+
+const SUPERPOWERS_PRIMARY_AGENT_ID = AUTOPILOT_AGENT_MANIFEST.superpowers.id;
 import { getSuperpowersDelegationGuide } from './subagents';
 
 type ParsedAutopilotCommand = ReturnType<typeof parseAutopilotCommand>;
@@ -478,6 +481,8 @@ function createAutopilotHookInternal(
   const config: AutopilotConfig = { ...DEFAULT_CONFIG, ...userConfig };
   const sessions = new Map<string, AutopilotState>();
   const sessionRunVersions = new Map<string, number>();
+  const superpowersSessions = new Set<string>();
+  const autoEnabledSessions = new Set<string>();
   let readinessOverride: ReadinessResult | null = null;
 
   function resolveReadiness(): ReadinessResult {
@@ -603,6 +608,128 @@ function createAutopilotHookInternal(
     return sessions.get(sessionID)!;
   }
 
+  function handleChatMessage(input: ChatMessageInput): void {
+    if (!input.sessionID) {
+      return;
+    }
+
+    if (
+      input.agent === SUPERPOWERS_PRIMARY_AGENT_ID ||
+      input.agent === undefined
+    ) {
+      // OpenCode does not always provide an explicit agent on chat.message;
+      // fall back to registering when the host is configured with superpowers
+      // as the default agent. Auto-enable later still requires the
+      // autoEnable config flag.
+      superpowersSessions.add(input.sessionID);
+    }
+  }
+
+  async function maybeAutoEnableForSuperpowers(
+    sessionID: string,
+  ): Promise<AutopilotState | null> {
+    if (!config.autoEnable) {
+      return null;
+    }
+
+    if (!superpowersSessions.has(sessionID)) {
+      return null;
+    }
+
+    const existingState = sessions.get(sessionID);
+    if (existingState?.enabled) {
+      return existingState;
+    }
+
+    if (autoEnabledSessions.has(sessionID)) {
+      // Already auto-enabled previously and the user disabled it — do not
+      // re-trigger automatically until the next user-initiated message.
+      return null;
+    }
+
+    const readiness = resolveReadiness();
+    const blockingMissing = readiness.missing.filter(
+      (m) => m !== 'superpowersUndeclared',
+    );
+    if (blockingMissing.length > 0) {
+      return null;
+    }
+
+    const inferredTask = await inferAutoEnableTask(sessionID);
+
+    const state = getOrCreateState(sessionID);
+    bumpRunVersion(sessionID);
+    cancelPendingTimer(state);
+
+    state.enabled = true;
+    state.task = inferredTask;
+    hydrateExecutionStateFromArtifacts(state, ctx.directory);
+    state.maxLoops = config.defaultMaxLoops;
+    state.currentLoop = 0;
+    state.currentPhase = 'execute';
+    state.phaseLoopCount = 0;
+    state.startTime = Date.now();
+    state.lastActivity = Date.now();
+    state.lastRecommendation = buildPhaseRecommendation(state);
+    state.canAutoProceed = true;
+    state.stagnationCount = 0;
+    state.lastObservedOutcome = 'progress';
+    state.lastPromptKind = 'start';
+    state.consecutiveContinuations = 0;
+    state.suppressUntil = 0;
+    state.isAutoInjecting = false;
+    state.isNotifying = false;
+
+    autoEnabledSessions.add(sessionID);
+
+    try {
+      await ctx.client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          noReply: true,
+          parts: [
+            {
+              type: 'text',
+              text: [
+                buildAutopilotActiveBanner('enabled'),
+                `Auto-enabled after Superpowers idle (max ${state.maxLoops} loops). Esc×2 to cancel, /autopilot off to disable.`,
+              ].join('\n'),
+            },
+          ],
+        },
+      });
+    } catch {
+      // best-effort visibility notification
+    }
+
+    return state;
+  }
+
+  async function inferAutoEnableTask(sessionID: string): Promise<string> {
+    try {
+      const messagesResult = await ctx.client.session.messages({
+        path: { id: sessionID },
+      });
+      const messages = messagesResult.data ?? [];
+      const lastUserMessage = messages
+        .slice()
+        .reverse()
+        .find((m) => m.info?.role === 'user');
+      if (lastUserMessage?.parts) {
+        const text = lastUserMessage.parts
+          .map((p) => (typeof p.text === 'string' ? p.text : ''))
+          .join('\n')
+          .trim();
+        if (text) {
+          return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+        }
+      }
+    } catch {
+      // graceful degradation: fall back to placeholder
+    }
+    return 'Continue current Superpowers task';
+  }
+
   async function autoStartFromTrigger(
     sessionID: string,
     triggerInput: ExecutionTriggerInput,
@@ -703,6 +830,8 @@ function createAutopilotHookInternal(
       sessions.delete(sessionID);
     }
     sessionRunVersions.delete(sessionID);
+    superpowersSessions.delete(sessionID);
+    autoEnabledSessions.delete(sessionID);
   }
 
   async function stopAutopilot(
@@ -986,6 +1115,7 @@ function createAutopilotHookInternal(
   async function sendCountdownNotification(
     sessionID: string,
     incompleteCount: number | null,
+    loopProgress?: { current: number; max: number },
   ): Promise<void> {
     const state = sessions.get(sessionID);
     if (state) {
@@ -1002,6 +1132,7 @@ function createAutopilotHookInternal(
               text: buildCountdownNotification(
                 incompleteCount,
                 config.cooldownMs / 1000,
+                loopProgress,
               ),
             },
           ],
@@ -1017,7 +1148,19 @@ function createAutopilotHookInternal(
   }
 
   async function handleSessionIdle(sessionID: string): Promise<void> {
-    const state = sessions.get(sessionID);
+    let state = sessions.get(sessionID);
+
+    // Auto-engage: when /autopilot was never invoked but the session has been
+    // driven by the superpowers agent and autoEnable is on, take over now so
+    // the user does not need to type /autopilot manually after Superpowers
+    // finishes a task.
+    if (!state || !state.enabled) {
+      const autoEnabled = await maybeAutoEnableForSuperpowers(sessionID);
+      if (autoEnabled) {
+        state = autoEnabled;
+      }
+    }
+
     if (!state || !state.enabled) {
       return;
     }
@@ -1070,11 +1213,19 @@ function createAutopilotHookInternal(
       return;
     }
 
-    // Send countdown notification before scheduling continuation
-    if (config.todoAware || config.questionDetection) {
+    // Send a countdown notification before scheduling continuation so the
+    // user has inline visibility that autopilot is taking over and can
+    // press Esc×2 to cancel before the auto-injection fires. Skip the
+    // notification only when the cooldown is zero (deterministic test
+    // mode) — there's no useful window to display in that case.
+    if (config.cooldownMs > 0) {
+      const projectedNextLoop = assessment.shouldIncrementLoop
+        ? state.currentLoop + 1
+        : state.currentLoop;
       await sendCountdownNotification(
         sessionID,
         config.todoAware ? incompleteCount : null,
+        { current: projectedNextLoop, max: state.maxLoops },
       );
     }
 
@@ -1312,6 +1463,7 @@ function createAutopilotHookInternal(
     handleCommandExecuteBefore,
     handleToolExecute,
     handleEvent,
+    handleChatMessage,
   };
 
   if (!includeTestControls) {

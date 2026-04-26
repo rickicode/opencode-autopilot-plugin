@@ -156,6 +156,14 @@ const AutopilotPlugin: Plugin = async (ctx) => {
         },
       );
     },
+
+    'chat.message': async (
+      input: { sessionID: string; agent?: string },
+      output?: { message?: { agent?: string } },
+    ) => {
+      const agent = input.agent ?? output?.message?.agent;
+      hook.handleChatMessage({ sessionID: input.sessionID, agent });
+    },
   };
 };
 
