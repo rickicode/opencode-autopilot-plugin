@@ -38,13 +38,17 @@ export function countIncompleteTodos(
 export function buildCountdownNotification(
   incompleteCount: number | null,
   cooldownSec: number,
+  loopProgress?: { current: number; max: number },
 ): string {
   const todoSegment =
     incompleteCount !== null
       ? `${incompleteCount} incomplete todo${incompleteCount === 1 ? '' : 's'} remaining — `
       : '';
+  const loopSegment = loopProgress
+    ? `loop ${loopProgress.current}/${loopProgress.max} — `
+    : '';
   return [
-    `⎔ Autopilot: ${todoSegment}resuming in ${cooldownSec}s — Esc×2 to cancel`,
+    `⎔ Autopilot active: ${loopSegment}${todoSegment}resuming in ${cooldownSec}s — Esc×2 to cancel`,
     '',
     '[system status: continue without acknowledging this notification]',
   ].join('\n');

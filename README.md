@@ -62,6 +62,39 @@ The visible status format is:
 [AUTOPILOT STATUS] Loop: X/N | Phase: <phase> | Next: <next action>
 ```
 
+### Auto-engage on Superpowers idle
+
+By default the plugin auto-engages autopilot the first time a Superpowers
+session goes idle, so the user does not have to type `/autopilot` after
+Superpowers finishes a task. The hook tracks the active agent through the
+`chat.message` lifecycle event, and on the next idle (or `session.status`
+idle) it:
+
+1. Enables autopilot for that session with the default 7-loop budget.
+2. Posts an inline `AUTOPILOT ACTIVE` banner via a `noReply` prompt so the
+   user can see autopilot has taken over.
+3. Schedules a normal continuation cycle (with the inline countdown
+   notification) on every subsequent idle until the loop budget is
+   exhausted, the user types `/autopilot off`, or a stop gate fires.
+
+To disable auto-engage, set `autoEnable: false` in the plugin's autopilot
+config. The user can still invoke `/autopilot` manually at any time.
+
+### Inline status while running
+
+While autopilot is running with a positive `cooldownMs` (default 3000ms),
+each scheduled continuation is preceded by an inline `noReply` notification
+of the form:
+
+```text
+⎔ Autopilot active: loop X/N — resuming in 3s — Esc×2 to cancel
+```
+
+This is the user-visible signal that autopilot is in control of the
+session. Pressing `Esc×2` during the cooldown cancels the upcoming
+continuation. Setting `cooldownMs: 0` (used in tests) suppresses the
+inline notification and injects continuations immediately.
+
 ## Commands
 
 ### Start Autopilot

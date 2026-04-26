@@ -71,6 +71,10 @@ declare module '@opencode-ai/plugin' {
       output: unknown,
     ) => Promise<void>;
     event?: (input: unknown) => Promise<void>;
+    'chat.message'?: (
+      input: { sessionID: string; agent?: string },
+      output?: { message?: { agent?: string } },
+    ) => Promise<void> | void;
   }>;
 }
 

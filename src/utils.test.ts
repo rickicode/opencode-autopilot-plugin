@@ -158,7 +158,7 @@ assertEqual(countIncompleteTodos([]), 0, 'returns 0 for empty array');
 
 // buildCountdownNotification tests
 const notification = buildCountdownNotification(3, 3);
-assert(notification.includes('⎔ Autopilot:'), 'notification contains autopilot marker');
+assert(notification.includes('⎔ Autopilot active'), 'notification contains autopilot marker');
 assert(notification.includes('3 incomplete todos remaining'), 'notification shows todo count');
 assert(notification.includes('3s'), 'notification shows cooldown seconds');
 assert(notification.includes('Esc×2 to cancel'), 'notification mentions escape to cancel');
@@ -172,6 +172,17 @@ assert(!singularNotification.includes('todos'), 'singular: does not contain todo
 const nullNotification = buildCountdownNotification(null, 3);
 assert(!nullNotification.includes('incomplete'), 'null count omits todo segment');
 assert(nullNotification.includes('resuming in 3s'), 'null count still shows cooldown');
+
+// Loop progress segment
+const loopNotification = buildCountdownNotification(null, 3, { current: 2, max: 7 });
+assert(
+  loopNotification.includes('loop 2/7'),
+  'notification shows loop progress when provided',
+);
+assert(
+  !nullNotification.includes('loop'),
+  'notification omits loop segment when not provided',
+);
 
 // readSuperpowersTask tests
 import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
